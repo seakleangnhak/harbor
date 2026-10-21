@@ -1,5 +1,9 @@
 # Progress
 
+## Private v1.0.1 release — authorized, qualification in progress
+
+Owner approved GitHub release and GHCR package publication; repository/package visibility remain private. Only audited sanitized history is used. Hosted main/PR CI already passed; final source and tagged-release CI must pass again. Release agent owns owner-only guards, private-package checks and immutable pulled-image verification; QA reviews Docker/registry checks; community agent reviews notes/license/assets; coordinator owns integration, scans, commits, tags and publication. Original deployment/history/v1.0.0 remain untouched. Actual registry outcomes will be recorded after execution; live cross-DC remains NOT TESTED.
+
 ## Final publication gate — local preparation
 
 Historical privacy review covers all refs/reflogs and 652 stored objects. One machine-path blob survives in four original revisions and two old source archives; historical identity metadata is retained privately. No unresolved credential/private-endpoint finding. Separate reviewed source export uses approved public identity, with no original commits/tags/runtime/artifacts. New publication docs specify private-first remote validation and proposed v1.0.1; original v1.0.0 stays intact. Local workflow/README/release checks and export verification recorded under ignored `output/publication-gate/`. Publication remains BLOCKED pending separate approvals and actual remote results. [Decision](PUBLICATION_GO_NO_GO.md).

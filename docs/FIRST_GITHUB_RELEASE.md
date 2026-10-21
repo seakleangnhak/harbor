@@ -1,6 +1,6 @@
 # First GitHub release
 
-**Release runbook.** Authorized private source publication and current remote results are recorded in [validation evidence](REMOTE_VALIDATION_REPORT.md). Release-tag, image-publication and public-visibility steps remain unexecuted and require separate approval. All commands operate from the audited sanitized repository, never the original Harbor checkout. Each authorization gate requires explicit owner approval; elapsed time is not approval. Proposed version: **v1.0.1**. Do not create or change `v1.0.0`.
+**Release runbook.** Earlier private source publication and hosted results are recorded in [validation evidence](REMOTE_VALIDATION_REPORT.md). Owner has now approved **v1.0.1** and private image publication; actual success requires the tagged workflow and delivered-image checks. Public visibility still requires separate approval. All commands operate from the audited sanitized repository, never the original Harbor checkout. Authorization persists within its approved scope; elapsed time is not approval. Do not create or change `v1.0.0`.
 
 ## 1. Private repository and initial push
 
@@ -59,13 +59,13 @@ Replace `RUN_ID` with the actual run. Inspect every job: workflow/release policy
 
 Protect `main` against force pushes/deletion and require review plus the actual successful CI check names. Restrict `v*` tag creation/update/deletion to approved maintainers. Review workflow changes as privileged code. Enable secret scanning/push protection, dependency alerts, and private vulnerability reporting where the repository visibility/plan supports them.
 
-Create `ghcr-release` before any release tag. Configure required reviewers, prevent self-review, and restrict deployments to protected stable release tags. GitHub's current [environment documentation](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments) says private/internal environments need Pro/Team/Enterprise, and private required-reviewer protection is unavailable on Free/Pro/Team. Verify actual plan capabilities. If the intended protection is unavailable, stop the private image-release sequence and obtain an approved compatible plan/process. Do not silently remove the review gate or make the repository public to bypass it.
+Current private plan cannot supply the intended protected reviewer environment. The approved personal-repository process instead requires explicit owner authorization and both `github.actor` and `github.triggering_actor` equal to `github.repository_owner` in release-gate and publish jobs. Full tagged CI, annotated-tag identity, main ancestry and stable-version checks remain mandatory. This is owner-controlled release execution, not independent review or protected branches. Organization-owned forks fail closed until maintainers approve a suitable policy. Configure stronger repository/environment protections when available; do not make the repository public or change billing to bypass a restriction.
 
 Inspect any existing `ghcr.io/<lowercase-owner>/harbor` package. Confirm correct ownership, repository linkage, private visibility and Actions write access for this repository; do not take over an unrelated package. No PAT is needed for workflow publishing. Only the publish job receives `packages: write`; ordinary CI remains read-only.
 
 ## 3. Approve and publish the first image
 
-First finish the v1.0.1 changelog with actual release date, review the accepted source, and run CI on that final main commit. Obtain explicit owner approval for the **specific commit**, new annotated `v1.0.1` tag, tag push and private GHCR image publication. Confirm a second authorized reviewer can approve the environment when self-review is prohibited.
+Finish the v1.0.1 changelog with actual release date, review the accepted source, and run CI on that final main commit. Owner's current authorization covers preparing and publishing this v1.0.1 private release. Record its exact validated source SHA before tagging; later releases require their own authorization. Run tag creation/push as the repository owner so both workflow actor checks pass.
 
 ```sh
 (
@@ -85,7 +85,7 @@ gh run list --repo "$OWNER/$REPOSITORY" --workflow docker-publish.yml
 )
 ```
 
-Use the approved public identity for tagger metadata. Stop if the tag exists, main moved beyond approved source, CI failed, or identity/protection differs. Never force a tag. Inspect release gate and all reusable CI jobs, then approve the protected publish job only after its checks pass. The workflow publishes `1.0.1`, `1.0` and `latest` for AMD64/ARM64, plus SBOM/minimal provenance. Record the actual immutable image digest from the workflow summary; partial registry publication is possible if later verification fails.
+Use the approved public identity for tagger metadata. Stop if the tag exists, main moved beyond validated source, CI failed, or identity/policy differs. Never force a tag. Inspect the release gate and all reusable CI jobs; publishing runs only after they pass and owner identity is checked again. The workflow publishes `1.0.1`, `1.0` and `latest` for AMD64/ARM64, plus SBOM/minimal provenance, then checks private visibility and pulled-image behavior. Record the actual immutable image digest from its summary; partial registry publication is possible if later verification fails.
 
 Retry only the same approved annotated tag after review:
 

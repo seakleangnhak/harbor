@@ -32,7 +32,7 @@
 
 ## Your workspace, on your terms
 
-Public distribution starts from a [reviewed source snapshot](docs/PUBLIC_REPOSITORY_PLAN.md). Earlier v1.0.0 reports describe a separate private development history; its commits, tag and local artifacts are not imported. First proposed GitHub/GHCR release: **v1.0.1**, pending release approval and GHCR qualification. [Hosted main/PR CI evidence](docs/REMOTE_VALIDATION_REPORT.md). [Publication gate](docs/PUBLICATION_GO_NO_GO.md) · [First release](docs/FIRST_GITHUB_RELEASE.md).
+Distribution starts from a [reviewed source snapshot](docs/PUBLIC_REPOSITORY_PLAN.md). Earlier v1.0.0 reports describe a separate private development history; its commits, tag and local artifacts are not imported. First approved private GitHub/GHCR release: **v1.0.1**, subject to successful tagged CI and registry qualification. Public visibility requires separate approval. [Hosted main/PR CI evidence](docs/REMOTE_VALIDATION_REPORT.md). [Publication gate](docs/PUBLICATION_GO_NO_GO.md) · [First release](docs/FIRST_GITHUB_RELEASE.md).
 
 Harbor keeps your file organization and encryption keys on a host you control. Telegram holds authenticated, encrypted chunks; a lightweight Go server connects them to a familiar file manager. A local storage adapter runs the same flow without Telegram credentials, making development and recovery testing practical.
 
@@ -253,7 +253,7 @@ For reproducible local packaging, `scripts/release.py` builds an explicit truste
 
 Small, focused contributions with meaningful verification are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), the [Code of Conduct](CODE_OF_CONDUCT.md), and [security policy](SECURITY.md) first. Use generated fixtures; never attach private files, credentials or real installation screenshots.
 
-Current local release: **v1.0.0**. Proposed first automated GitHub/GHCR release: **v1.0.1**, after CI integration and explicit publication approval. Existing tags stay immutable. [Changelog](CHANGELOG.md) · [publishing guide](docs/GHCR_PUBLISHING_GUIDE.md) · [open-source readiness](docs/OPEN_SOURCE_READINESS_REPORT.md).
+Original local release: **v1.0.0**. First approved automated private GitHub/GHCR release: **v1.0.1**; actual publication requires successful tagged CI and delivered-image verification. Existing tags stay immutable. [Changelog](CHANGELOG.md) · [publishing guide](docs/GHCR_PUBLISHING_GUIDE.md) · [open-source readiness](docs/OPEN_SOURCE_READINESS_REPORT.md).
 
 Future work is driven by verified needs: legitimate live cross-DC qualification, broader browser/accessibility testing, recovery automation and independent security review. These are directions, not delivery promises.
 

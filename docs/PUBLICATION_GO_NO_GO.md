@@ -1,6 +1,6 @@
 # Publication go/no-go
 
-2026-10-21. **PRIVATE_SOURCE_PUBLICATION = PASS. PUBLIC_RELEASE = BLOCKED.** Owner-authorized private publication used only the audited sanitized export. Initial main/PR remote CI passed; release tags, GHCR publication and public visibility still require separate approval. See [actual remote evidence](REMOTE_VALIDATION_REPORT.md).
+2026-10-21. **PRIVATE_SOURCE_PUBLICATION = PASS. PRIVATE_IMAGE_RELEASE = AUTHORIZED, pending execution. PUBLIC_VISIBILITY = BLOCKED.** Owner authorized v1.0.1 and private GHCR publication using only audited sanitized source. Full tagged CI and registry delivery checks must pass before release success is claimed. Public visibility requires separate approval. [Earlier remote evidence](REMOTE_VALIDATION_REPORT.md).
 
 | Gate | Result | Evidence / next action |
 | --- | --- | --- |
@@ -12,16 +12,16 @@
 | Installation and runtime preservation | PASS, source review | Secure local defaults and source-build instructions retained. No application, database, content key or Telegram session changes. Runtime/source fingerprints unchanged. |
 | CI and publishing policy | PASS, local | Fresh actionlint, workflow policy, release-gate tests, README/SVG/link checks; PR/main have no registry publishing path. |
 | Actual GitHub initial main/PR CI | PASS | All five jobs passed in [main run 39552906176](https://github.com/seakleangnhak/harbor/actions/runs/39552906176) and [PR run 39553007811](https://github.com/seakleangnhak/harbor/actions/runs/39553007811). Source scopes recorded in [remote evidence](REMOTE_VALIDATION_REPORT.md). |
-| Actual tagged-release CI | NOT TESTED | No new release tag authorized. |
-| GitHub protections / GHCR access | BLOCKED | Default tokens verified read-only. Private branch/ruleset protection requires plan upgrade; release reviewer environment is not configured. Registry access remains unverified. |
-| GHCR publication / pulled-image smoke | NOT TESTED | Approved release, digest/platform/attestation inspection and both-platform smoke remain required. |
+| Actual tagged-release CI | NOT TESTED | Owner-approved v1.0.1 must pass full tagged CI. |
+| GitHub protections / GHCR access | LIMITED | Read-only default tokens. Current private plan lacks branch/ruleset/reviewer protection; approved personal-owner actor guards retain full CI/source/tag checks. Registry access awaits actual publication. |
+| GHCR publication / pulled-image smoke | NOT TESTED | Private publication authorized; digest/platform/attestation inspection, private linkage and both-platform smoke remain required. |
 | Repository/package public visibility | BLOCKED | Separate explicit owner approval required after remote validation. |
 
 ## Release recommendation
 
-Use only the separately audited source export. First proposed workflow-based version is **v1.0.1**. Original local `v1.0.0` is unchanged and deliberately absent from public history. No v1.0.1 tag exists yet. Do not import history to make historical report links resolve.
+Use only separately audited source. First approved workflow-based version is **v1.0.1**. Original local `v1.0.0` is unchanged and deliberately absent from sanitized history. Tag only the final validated clean main commit; never move historical tags or import history to make report links resolve.
 
-Initial owner-approved **private** creation/push is complete. Resolve the release-control limitation, then approve the exact release commit/tag and private GHCR publication. Approve public visibility separately after registry verification. Follow [first-release sequence](FIRST_GITHUB_RELEASE.md); local workflow checks do not establish remote execution success.
+Initial owner-approved **private** creation/push is complete. Owner subsequently authorized v1.0.1 and private package publication. Current workflow uses owner-only release execution because protected private review is unavailable; this limitation is explicit, with full CI/source/tag validation retained. Approve public visibility separately after registry verification. Follow [first-release sequence](FIRST_GITHUB_RELEASE.md); local workflow checks do not establish remote execution success.
 
 Harbor remains qualified for local private personal use within documented tests. It is not independently security-audited, guaranteed durable on Telegram or qualified for public-internet deployment. Live cross-datacenter Telegram retrieval remains **NOT TESTED**. These limitations must remain in README, security policy and release notes.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Credential-free CI checks. Docker smoke uses only fresh, disposable local state."""
+"""CI and release checks. Docker smoke uses only fresh, disposable local state."""
 import argparse
 import hashlib
 import io
@@ -58,15 +58,50 @@ def workflow_policy(ci, publish):
                 'python3 scripts/ci_check.py reproducible', 'python3 scripts/ci_check.py docker-smoke')
     if not all(text in ci for text in required):
         raise QualificationError('CI must retain PR, main, reproducibility and both architecture checks')
+    owner_gate = '    if: ${{ github.actor == github.repository_owner && github.triggering_actor == github.repository_owner }}\n'
     required = ("tags: ['v*']", '  workflow_dispatch:\n', 'python3 scripts/release_gate.py',
                 'needs: gate', 'uses: ./.github/workflows/ci.yml', 'needs: [gate, verify]',
-                'environment: ghcr-release', '      packages: write\n', '${{ secrets.GITHUB_TOKEN }}',
-                'platforms: linux/amd64,linux/arm64', 'provenance: mode=min', 'sbom: generator=')
+                '  gate:\n' + owner_gate, '  publish:\n' + owner_gate,
+                '      packages: write\n', '${{ secrets.GITHUB_TOKEN }}',
+                'platforms: linux/amd64,linux/arm64', 'provenance: mode=min', 'sbom: generator=',
+                'python3 scripts/ci_check.py package-check\n', 'python3 scripts/ci_check.py package-check --required\n',
+                'docker pull --platform "$platform" "$IMAGE@$child_digest"',
+                'python3 scripts/ci_check.py docker-smoke --image "$IMAGE@$child_digest" --platform "$platform"',
+                '--revision "$HARBOR_REVISION"', "--format '{{json .SBOM}}'", "--format '{{json .Provenance}}'")
     if not all(text in publish for text in required) or '  pull_request:' in publish or 'branches:' in publish:
         raise QualificationError('Publication must remain stable-tag gated after complete validation')
     if (publish.count('packages: write') != 1 or publish.count('python3 scripts/release_gate.py') != 2
             or re.search(r'\b(?:contents|id-token|attestations):\s*write\b', publish)):
         raise QualificationError('Publication permission and immediate pre-login gate required')
+
+
+def package_check(required):
+    owner = os.environ.get('GITHUB_REPOSITORY_OWNER', '')
+    repository = os.environ.get('GITHUB_REPOSITORY', '')
+    if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]*', owner)
+            or not re.fullmatch(re.escape(owner) + r'/[A-Za-z0-9_.-]+', repository, re.I)
+            or not os.environ.get('GH_TOKEN')):
+        raise QualificationError('Package check needs trusted repository context and workflow token')
+    response = subprocess.run(['gh', 'api', '--hostname', 'github.com', '--include',
+                              '-H', 'Accept: application/vnd.github+json',
+                              '-H', 'X-GitHub-Api-Version: 2022-11-28',
+                              'users/' + owner + '/packages/container/harbor'],
+                             capture_output=True, text=True, timeout=60)
+    header, separator, body = response.stdout.partition('\n\n')
+    status = re.match(r'HTTP/\S+ ([0-9]{3})\b', header)
+    if not status or not separator:
+        raise QualificationError('Package API returned an invalid response')
+    if status[1] == '404' and not required:
+        return {'package': 'harbor', 'state': 'not_found'}
+    if response.returncode or status[1] != '200':
+        raise QualificationError('Package access or required package verification failed')
+    package = json.loads(body)
+    if (not isinstance(package, dict) or package.get('visibility') != 'private'
+            or not isinstance(package.get('repository'), dict)
+            or not isinstance(package['repository'].get('full_name'), str)
+            or package['repository']['full_name'].lower() != repository.lower()):
+        raise QualificationError('Package must be private and linked to this repository')
+    return {'package': 'harbor', 'visibility': 'private', 'repository_linkage': 'PASS'}
 
 
 def workflows():
@@ -152,6 +187,20 @@ def validate_image(image, platform, target_version):
         raise QualificationError('Image platform, version, nonroot entrypoint or health check invalid')
 
 
+def validate_release_labels(image, repository, revision, target_version):
+    if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+', repository)
+            or not re.fullmatch(r'[0-9a-f]{40}', revision)):
+        raise QualificationError('Invalid release repository or revision')
+    source = 'https://github.com/' + repository
+    expected = {'org.opencontainers.image.source': source, 'org.opencontainers.image.version': target_version,
+                'org.opencontainers.image.revision': revision, 'org.opencontainers.image.licenses': 'MIT',
+                'org.opencontainers.image.description': 'Private, self-hosted Telegram-backed cloud drive',
+                'org.opencontainers.image.documentation': source + '/blob/' + revision + '/README.md'}
+    if any(image['Config'].get('Labels', {}).get(key) != value for key, value in expected.items()):
+        raise QualificationError('Pulled release image OCI labels do not match approved source')
+    return expected
+
+
 def validate_private_modes(archive_bytes):
     required = {'content.key', 'owner-password', 'drive.db', 'storage.json'}
     seen = set()
@@ -195,8 +244,10 @@ def check_download(client, node, content):
     client.request('GET', '/nodes/' + node + '/content', anonymous=True, expect=401)
 
 
-def docker_smoke(image, platform, target_version):
-    validate_image(json.loads(run('docker', 'image', 'inspect', image))[0], platform, target_version)
+def docker_smoke(image, platform, target_version, revision=None):
+    metadata = json.loads(run('docker', 'image', 'inspect', image))[0]
+    validate_image(metadata, platform, target_version)
+    labels = validate_release_labels(metadata, os.environ.get('GITHUB_REPOSITORY', ''), revision, target_version) if revision else None
     identity = 'harbor-ci-' + secrets.token_hex(8)
     volume, container, initializer = identity + '-data', identity, identity + '-init'
     created = []
@@ -275,7 +326,7 @@ def docker_smoke(image, platform, target_version):
                     'multipart_bytes': len(content), 'sha256_equal': True, 'range': 'PASS',
                     'auth_and_csrf': 'PASS', 'restart_resume': 'PASS', 'container_recreation': 'PASS',
                     'private_state_modes': 'PASS', 'nonroot_health_and_executables': 'PASS',
-                    'clean_shutdown': 'PASS', 'telegram': 'NOT TESTED'}
+                    'clean_shutdown': 'PASS', 'telegram': 'NOT TESTED', 'release_oci_labels': labels}
     finally:
         for name in reversed(created):
             run('docker', 'rm', '--force', name)
@@ -287,22 +338,26 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('workflows')
+    commands.add_parser('package-check').add_argument('--required', action='store_true')
     reproduce = commands.add_parser('reproducible')
     reproduce.add_argument('--version', required=True, type=version)
     smoke = commands.add_parser('docker-smoke')
     smoke.add_argument('--image', required=True)
     smoke.add_argument('--platform', choices=('linux/amd64', 'linux/arm64'), required=True)
     smoke.add_argument('--version', required=True, type=version)
+    smoke.add_argument('--revision', help='Also verify all release OCI labels against this commit and GITHUB_REPOSITORY')
     args = parser.parse_args()
     try:
         if args.command == 'workflows':
             result = workflows()
+        elif args.command == 'package-check':
+            result = package_check(args.required)
         elif args.command == 'reproducible':
             result = reproducible(args.version)
         else:
             if args.image.startswith('-') or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_./:@-]*', args.image):
                 parser.error('Use a Docker image reference without whitespace or options')
-            result = docker_smoke(args.image, args.platform, args.version)
+            result = docker_smoke(args.image, args.platform, args.version, args.revision)
     except (QualificationError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         parser.exit(1, 'FAIL ' + (str(error) if isinstance(error, QualificationError) else type(error).__name__) + '\n')
     print(json.dumps({'status': 'PASS', **result}, sort_keys=True))

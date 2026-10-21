@@ -1,6 +1,6 @@
 # GitHub and GHCR release guide
 
-Status: **Private source publication PASS; hosted initial main/PR CI PASS; GHCR publication NOT TESTED.** The audited sanitized source now has an authorized private GitHub remote. No image or new tag has been published. See [remote evidence and release-control blockers](REMOTE_VALIDATION_REPORT.md). First proposed automated release: **v1.0.1**, subject to owner approval. Existing annotated `v1.0.0` stays at `f6c49fcd2a52e365c6cfe84395245112a105f929`.
+Status at release preparation: **Private source publication PASS; hosted main/PR CI PASS; GHCR publication NOT TESTED.** Owner authorized **v1.0.1** and private GHCR publication. Registry success requires the actual tagged run and pulled-image checks; public visibility remains separately gated. [Earlier hosted evidence](REMOTE_VALIDATION_REPORT.md). Existing original annotated `v1.0.0` stays at `f6c49fcd2a52e365c6cfe84395245112a105f929`.
 
 **Publication lineage:** use the [sanitized source repository](PUBLIC_REPOSITORY_PLAN.md), which has no original commits or `v1.0.0` tag. The tag identity above belongs only to the retained private development checkout. Follow the [private-first sequence](FIRST_GITHUB_RELEASE.md); original history and old source archives are blocked from publication by the [privacy audit](PUBLICATION_PRIVACY_AUDIT.md).
 
@@ -10,7 +10,7 @@ Status: **Private source publication PASS; hosted initial main/PR CI PASS; GHCR 
 2. Obtain separate authorization to create/publish the repository, push commits/tags and publish images. Local preparation does not grant it. Configure the chosen GitHub remote only afterward.
 3. Use `main` as the default branch. Enable Actions with a **read-only default GITHUB_TOKEN**, restrict Actions to approved publishers, and require full-SHA action pins. Do not grant fork pull requests write tokens or secrets. Do not enable automatic approval of fork workflows.
 4. Protect `main`: require pull-request review and successful CI jobs; dismiss stale reviews; block force pushes/deletion. Protect `v*` tags against creation/update/deletion except approved maintainers. Review workflow changes as privileged code. No owner-specific `CODEOWNERS` is invented here; configure one after maintainers are chosen.
-5. Create environment **`ghcr-release`** with required reviewers and prevention of self-review. Restrict deployment refs to protected release tags. The environment name alone does not enforce human approval. Private reviewer protection requires a compatible GitHub plan; stop private registry release if unavailable rather than bypassing this intended gate. Plan caveats are documented in [first release](FIRST_GITHUB_RELEASE.md).
+5. Current personal-repository release process requires explicit owner approval, then both `github.actor` and `github.triggering_actor` must equal `github.repository_owner` in the gate and publish jobs. Full tagged-release CI and source/tag checks remain mandatory. Current private plan lacks the intended environment-review protection; this owner-only process does not claim independent review or branch protection. It fails closed for organization-owned repositories until an approved maintainer/reviewer policy replaces it. Add protected environments/rulesets when supported; do not change visibility or billing to bypass restrictions.
 6. Enable secret scanning/push protection and dependency alerts where available. Enable and verify private vulnerability reporting when public visibility supports it, before announcement; while private, use the security policy's fallback. Dependabot checks Go, npm, Docker and Actions weekly. Check branch-protection plan availability; no remote setting is claimed to be configured.
 7. Review existing GHCR package ownership. The built-in token must be allowed Actions write access to this repository's `harbor` package. Do not adopt an unrelated existing package. New GHCR packages normally start private; change visibility explicitly only after publication approval and review of package/repository linkage.
 
@@ -20,8 +20,8 @@ Status: **Private source publication PASS; hosted initial main/PR CI PASS; GHCR 
 | --- | --- | --- |
 | Pull request | Workflow validation; Go default/tagged tests, race, vet and reproducibility; frontend; both image architectures and local-adapter smoke | Read-only token, no login/push |
 | Push to `main` | Same CI | No login/push; no `latest` update |
-| Stable annotated tag newer than v1.0.0 | Release gate, complete reusable CI, protected publish job | Built-in `GITHUB_TOKEN`, `contents: read` + `packages: write` only in publish job |
-| Manual dispatch | Same gates, only when selected workflow ref is the exact existing annotated stable tag named by input | Same protected publish job |
+| Stable annotated tag newer than v1.0.0 | Owner-only release gate, complete reusable CI, owner-only publish job | Built-in `GITHUB_TOKEN`, `contents: read` + `packages: write` only in publish job |
+| Manual dispatch | Same gates, only when selected workflow ref is the exact existing annotated stable tag named by input | Same owner-only publish job |
 
 The gate rejects branch refs, prereleases, malformed tags, lightweight tags, historical v1.0.0, mismatched input/ref/commit, source outside `origin/main`, and a version older than another stable tag. It accepts no user-supplied registry, image name, build context or arbitrary Docker tag. Manual dispatch cannot turn `main` into a release. Repository rules remain necessary: maintainers who can modify a publishing workflow are trusted.
 
@@ -57,7 +57,7 @@ Publishing uses pinned action commits, immutable Node/Go/distroless base indices
 
 The job rebuilds the same validated release source/version and arguments for both platforms. OCI source/version/revision/description/MIT/documentation labels are added. This published index includes SBOM and minimal BuildKit provenance; its digest differs from a no-attestation local smoke image. Attestations describe build contents, not an independent security review or signature. There is no OIDC/keyless signing or GitHub artifact-attestation claim, and no corresponding extra token permissions.
 
-After a successful push, the workflow inspects the immutable index for `linux/amd64` and `linux/arm64`, permitting only attestation descriptors alongside them. Its summary records `ghcr.io/<owner>/harbor@sha256:…`. Save this actual digest in release notes and deployment records; do not invent one before a remote run. Registry delivery/retention and GHA cache behavior remain NOT TESTED locally.
+Before publication, a built-in-token package API check permits a genuine not-found response or requires an existing private package linked to this repository; authorization and malformed responses fail closed. After publication, private visibility and repository linkage must be confirmed. The workflow inspects the immutable index for `linux/amd64` and `linux/arm64`, permits only matching attestation descriptors, then pulls each platform child digest and runs isolated encrypted multipart/checksum/restart/recreation smoke checks. Its summary records `ghcr.io/<owner>/harbor@sha256:…` and per-platform results. Save actual evidence in release notes; local validation cannot establish registry delivery or retention.
 
 After approved publication, verify from a clean client:
 

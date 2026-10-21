@@ -1,5 +1,7 @@
 # Private GitHub validation
 
+Historical receipt of initial source publication. Owner later authorized v1.0.1 and private package publication; the current [release runbook](FIRST_GITHUB_RELEASE.md) documents owner-only gates replacing unavailable private environment review. Results below remain scoped to their recorded runs. Registry success must be recorded separately after execution.
+
 2026-10-21. **PRIVATE_SOURCE_PUBLICATION = PASS. Remote main/PR CI = PASS. GHCR = NOT TESTED. Public visibility = NOT AUTHORIZED.**
 
 ## Audited source

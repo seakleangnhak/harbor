@@ -23,6 +23,7 @@ defaults:
 
 jobs:
   gate:
+    if: ${{ github.actor == github.repository_owner && github.triggering_actor == github.repository_owner }}
     name: Verify stable tag and trusted source
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -52,11 +53,11 @@ jobs:
       version: ${{ needs.gate.outputs.version }}
 
   publish:
+    if: ${{ github.actor == github.repository_owner && github.triggering_actor == github.repository_owner }}
     name: Publish validated stable image
     needs: [gate, verify]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    environment: ghcr-release
     permissions:
       contents: read
       packages: write
@@ -70,6 +71,10 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: python3 scripts/release_gate.py
+      - name: Reject public or unrelated existing package
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci_check.py package-check
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           image: docker.io/tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
@@ -124,15 +129,64 @@ jobs:
         env:
           IMAGE: ${{ needs.gate.outputs.image }}
           DIGEST: ${{ steps.build.outputs.digest }}
+          HARBOR_VERSION: ${{ needs.gate.outputs.version }}
+          HARBOR_REVISION: ${{ needs.gate.outputs.commit }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          python3 scripts/ci_check.py package-check --required
           docker buildx imagetools inspect --raw "$IMAGE@$DIGEST" > manifest.json
+          docker buildx imagetools inspect --format '{{json .SBOM}}' "$IMAGE@$DIGEST" > sbom.json
+          docker buildx imagetools inspect --format '{{json .Provenance}}' "$IMAGE@$DIGEST" > provenance.json
           python3 - <<'PY'
+          import hashlib
           import json
+          import os
           from pathlib import Path
-          manifest = json.loads(Path('manifest.json').read_text())
+          import re
+          raw = Path('manifest.json').read_bytes()
+          assert 'sha256:' + hashlib.sha256(raw).hexdigest() == os.environ['DIGEST'], 'Published index digest mismatch'
+          manifest = json.loads(raw)
+          sbom = json.loads(Path('sbom.json').read_text())
+          provenance = json.loads(Path('provenance.json').read_text())
           platforms = {m['platform']['os'] + '/' + m['platform']['architecture'] for m in manifest['manifests']}
           assert {'linux/amd64', 'linux/arm64'} <= platforms, platforms
           assert platforms <= {'linux/amd64', 'linux/arm64', 'unknown/unknown'}, platforms
+          children = []
+          evidence = []
+          attestations = [m for m in manifest['manifests'] if m['platform'] == {'os': 'unknown', 'architecture': 'unknown'}]
+          assert len(attestations) == 2, 'Expected one attestation manifest per platform'
+          for platform in ('linux/amd64', 'linux/arm64'):
+              matches = [m['digest'] for m in manifest['manifests']
+                         if m['platform']['os'] + '/' + m['platform']['architecture'] == platform]
+              assert len(matches) == 1 and re.fullmatch(r'sha256:[0-9a-f]{64}', matches[0]), platform
+              bound = [m for m in attestations if m.get('annotations', {}).get('vnd.docker.reference.digest',
+                       m.get('annotations', {}).get('com.docker.reference.digest')) == matches[0]]
+              assert len(bound) == 1 and re.fullmatch(r'sha256:[0-9a-f]{64}', bound[0]['digest']), platform
+              assert bound[0]['annotations'].get('vnd.docker.reference.type',
+                     bound[0]['annotations'].get('com.docker.reference.type')) == 'attestation-manifest', platform
+              spdx = sbom[platform]['SPDX']
+              slsa = provenance[platform]['SLSA']
+              build = slsa.get('buildDefinition', slsa)
+              materials = build.get('resolvedDependencies', slsa.get('materials'))
+              assert spdx['spdxVersion'].startswith('SPDX-') and spdx['SPDXID'] == 'SPDXRef-DOCUMENT', platform
+              assert isinstance(spdx['packages'], list) and spdx['packages'], platform
+              assert build['buildType'] in ('https://mobyproject.org/buildkit@v1',
+                     'https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md'), platform
+              assert isinstance(materials, list) and materials, platform
+              children.append(platform + '\t' + matches[0])
+              evidence.append({'platform': platform, 'child_digest': matches[0], 'attestation_digest': bound[0]['digest'],
+                               'spdx_version': spdx['spdxVersion'], 'sbom_packages': len(spdx['packages']),
+                               'slsa_build_type': build['buildType'], 'slsa_materials': len(materials)})
+          assert len({child.split('\t')[1] for child in children}) == 2, 'Runnable platform digests must differ'
+          Path('platform-digests.tsv').write_text('\n'.join(children) + '\n')
+          print(json.dumps({'index_digest': os.environ['DIGEST'], 'platforms': evidence,
+                            'attestation_check': 'descriptor bindings and SPDX/SLSA predicates; raw subjects/signatures not inspected'}, sort_keys=True))
           PY
           # shellcheck disable=SC2016 # Markdown backticks are literal.
           printf '### Harbor image\n\n`%s@%s`\n\nPlatforms: linux/amd64, linux/arm64. SBOM and BuildKit provenance attached.\n' "$IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          while IFS=$'\t' read -r platform child_digest; do
+            docker pull --platform "$platform" "$IMAGE@$child_digest"
+            python3 scripts/ci_check.py docker-smoke --image "$IMAGE@$child_digest" --platform "$platform" --version "$HARBOR_VERSION" --revision "$HARBOR_REVISION"
+            # shellcheck disable=SC2016 # Markdown backticks are literal.
+            printf '\n- `%s`: `%s@%s` — pulled-image smoke PASS\n' "$platform" "$IMAGE" "$child_digest" >> "$GITHUB_STEP_SUMMARY"
+          done < platform-digests.tsv
