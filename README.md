@@ -94,6 +94,8 @@ docker pull ghcr.io/seakleangnhak/harbor@sha256:d5c56ecd655e83f298e63f3e97f7df75
 
 Version tag `1.0.1`, minor `1.0` and `latest` resolve to this index at release qualification; prefer the digest for deployment. Keep existing volume identity and recovery material when using a trusted-image override. [Operations](docs/PRODUCTION_OPERATIONS.md) · [Publishing and image verification](docs/GHCR_PUBLISHING_GUIDE.md).
 
+For Dokploy, use the image-only [Compose template](compose.dokploy.yaml) and [deployment guide](docs/DOKPLOY.md). It keeps one instance, an external data volume and HTTPS routing configured through Dokploy.
+
 ### Local development
 
 Requires Go **1.26.10+**, Node.js **24+**, and npm. macOS and Linux are supported. Python 3.11+ runs acceptance/recovery helpers; reproducible release packaging needs Python 3.12+ and Docker Buildx.
