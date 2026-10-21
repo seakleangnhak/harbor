@@ -8,7 +8,6 @@ from pathlib import Path
 import subprocess
 import tarfile
 import tempfile
-import textwrap
 import unittest
 from unittest import mock
 
@@ -33,9 +32,8 @@ class CICheckTest(unittest.TestCase):
                          publish.replace('  publish:\n    if:', '  publish:\n    # if:'),
                          publish.replace('python3 scripts/release_gate.py', 'true', 1),
                          publish.replace('python3 scripts/ci_check.py package-check\n', 'true\n'),
-                         publish.replace('python3 scripts/ci_check.py package-check --required', 'true'),
-                         publish.replace('docker pull --platform', 'echo'),
-                         publish.replace('python3 scripts/ci_check.py docker-smoke', 'true'),
+                         publish.replace('python3 scripts/ci_check.py verify-published', 'true'),
+                         publish.replace('HARBOR_GHCR_PACKAGE_ID: ${{ vars.HARBOR_GHCR_PACKAGE_ID }}', 'UNAPPROVED: value'),
                          publish + '\n  pull_request:\n',
                          publish + '\n# id-token: write\n',
                          publish + '\n# packages: write\n'):
@@ -45,7 +43,7 @@ class CICheckTest(unittest.TestCase):
     def test_package_privacy_and_repository_linkage_fail_closed(self):
         def response(status, body, code=0):
             return subprocess.CompletedProcess([], code, 'HTTP/2.0 ' + str(status) + '\nHeader: fixture\n\n' + json.dumps(body), '')
-        private = {'visibility': 'private', 'repository': {'full_name': 'Example-Owner/harbor'}}
+        private = {'id': 123, 'name': 'harbor', 'visibility': 'private', 'repository': {'full_name': 'Example-Owner/harbor'}}
         environment = {'GITHUB_REPOSITORY_OWNER': 'Example-Owner', 'GITHUB_REPOSITORY': 'Example-Owner/harbor',
                        'GH_TOKEN': 'synthetic-workflow-token'}
         with mock.patch.dict(os.environ, environment):
@@ -73,9 +71,50 @@ class CICheckTest(unittest.TestCase):
                 check.package_check(False)
             request.assert_not_called()
 
+    def test_owner_verified_package_pin_handles_omitted_linkage_only(self):
+        environment = {'GITHUB_REPOSITORY_OWNER': 'Example-Owner', 'GITHUB_REPOSITORY': 'Example-Owner/harbor',
+                       'GH_TOKEN': 'synthetic-workflow-token', 'HARBOR_GHCR_PACKAGE_ID': '123'}
+        private = {'id': 123, 'name': 'harbor', 'visibility': 'private'}
+        def request(body, status=200):
+            return subprocess.CompletedProcess([], 0 if status == 200 else 1,
+                'HTTP/2.0 ' + str(status) + '\n\n' + json.dumps(body), '')
+        with mock.patch.dict(os.environ, environment):
+            with mock.patch.object(check.subprocess, 'run', return_value=request(private)):
+                self.assertIn('owner_verified_package_id', check.package_check(True)['repository_linkage'])
+            for body in ({**private, 'repository': None}, {**private, 'repository': {}},
+                         {**private, 'repository': {'full_name': 'Other/harbor'}},
+                         {**private, 'visibility': 'public'}, {**private, 'name': 'other'},
+                         {**private, 'id': 124}, {**private, 'id': '123'}, {**private, 'id': True}):
+                with self.subTest(body=body), mock.patch.object(check.subprocess, 'run', return_value=request(body)):
+                    with self.assertRaises(check.QualificationError):
+                        check.package_check(False)
+            with mock.patch.object(check.subprocess, 'run', return_value=request({}, 404)):
+                with self.assertRaises(check.QualificationError):
+                    check.package_check(False)
+            for pin in ('', '0', '-1', '0123', '123\ninjected', '1' * 21):
+                with self.subTest(pin=pin), mock.patch.dict(os.environ, {'HARBOR_GHCR_PACKAGE_ID': pin}), \
+                        mock.patch.object(check.subprocess, 'run', return_value=request(private)):
+                    with self.assertRaises(check.QualificationError):
+                        check.package_check(True)
+            linked = {**private, 'repository': {'full_name': 'Example-Owner/harbor'}}
+            with mock.patch.object(check.subprocess, 'run', return_value=request({**linked, 'id': 456})):
+                with self.assertRaises(check.QualificationError):
+                    check.package_check(True)
+
+    def test_readonly_verifier_workflow_cannot_publish(self):
+        ci, publish, verify = [(check.ROOT / '.github/workflows' / name).read_text()
+                              for name in ('ci.yml', 'docker-publish.yml', 'verify-published.yml')]
+        check.workflow_policy(ci, publish, verify)
+        for changed in (verify.replace('packages: read', 'packages: write'),
+                        verify.replace("github.ref == 'refs/heads/main'", 'true'),
+                        verify.replace('github.actor == github.repository_owner', 'true'),
+                        verify.replace('github.triggering_actor == github.repository_owner', 'true'),
+                        verify + '\n  push:\n', verify + '\n# docker/build-push-action@\n',
+                        verify.replace('verify-published --tag', 'true --tag')):
+            with self.subTest(source=changed), self.assertRaises(check.QualificationError):
+                check.workflow_policy(ci, publish, changed)
+
     def test_published_index_requires_unique_platform_children(self):
-        publish = (check.ROOT / '.github/workflows/docker-publish.yml').read_text()
-        source = textwrap.dedent(publish.split("          python3 - <<'PY'\n", 1)[1].split('          PY\n', 1)[0])
         children = [{'platform': {'os': 'linux', 'architecture': arch}, 'digest': 'sha256:' + digit * 64}
                     for arch, digit in (('amd64', 'a'), ('arm64', 'b'))]
         attestations = [{'platform': {'os': 'unknown', 'architecture': 'unknown'}, 'digest': 'sha256:' + digit * 64,
@@ -86,16 +125,12 @@ class CICheckTest(unittest.TestCase):
         slsa = {'buildType': 'https://mobyproject.org/buildkit@v1', 'materials': [{'uri': 'fixture'}]}
         def inspect(manifests, spdx=spdx, slsa=slsa, digest=None):
             raw = json.dumps({'manifests': manifests}).encode()
-            files = {name: mock.Mock() for name in ('manifest.json', 'sbom.json', 'provenance.json', 'platform-digests.tsv')}
-            files['manifest.json'].read_bytes.return_value = raw
-            files['sbom.json'].read_text.return_value = json.dumps({p: {'SPDX': spdx} for p in ('linux/amd64', 'linux/arm64')})
-            files['provenance.json'].read_text.return_value = json.dumps({p: {'SLSA': slsa} for p in ('linux/amd64', 'linux/arm64')})
-            with mock.patch('pathlib.Path', side_effect=files.__getitem__), contextlib.redirect_stdout(io.StringIO()), \
-                    mock.patch.dict(os.environ, {'DIGEST': digest or 'sha256:' + hashlib.sha256(raw).hexdigest()}):
-                exec(compile(source, 'docker-publish.yml', 'exec'), {})
-            return files['platform-digests.tsv'].write_text
-        written = inspect(children + attestations)
-        written.assert_called_once_with('linux/amd64\tsha256:' + 'a' * 64 + '\nlinux/arm64\tsha256:' + 'b' * 64 + '\n')
+            return check.published_index(raw,
+                {p: {'SPDX': spdx} for p in ('linux/amd64', 'linux/arm64')},
+                {p: {'SLSA': slsa} for p in ('linux/amd64', 'linux/arm64')},
+                digest or 'sha256:' + hashlib.sha256(raw).hexdigest())
+        self.assertEqual([v['child_digest'] for v in inspect(children + attestations)],
+                         ['sha256:' + 'a' * 64, 'sha256:' + 'b' * 64])
         inspect(children + attestations, slsa={'buildDefinition': {
             'buildType': 'https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md',
             'resolvedDependencies': [{'uri': 'fixture'}] * 4}, 'runDetails': {}})
@@ -103,11 +138,23 @@ class CICheckTest(unittest.TestCase):
                         [children[0], {**children[1], 'digest': 'not-a-digest'}] + attestations,
                         children + [attestations[0], {**attestations[1], 'annotations': {
                             **attestations[1]['annotations'], 'vnd.docker.reference.type': 'unrelated'}}]):
-            with self.subTest(manifests=invalid), self.assertRaises(AssertionError):
+            with self.subTest(manifests=invalid), self.assertRaises(check.QualificationError):
                 inspect(invalid)
         for options in ({'digest': 'sha256:' + 'f' * 64}, {'spdx': {**spdx, 'packages': []}}, {'slsa': {**slsa, 'materials': []}}):
-            with self.subTest(options=options), self.assertRaises(AssertionError):
+            with self.subTest(options=options), self.assertRaises(check.QualificationError):
                 inspect(children + attestations, **options)
+
+    def test_published_reference_rejects_untrusted_inputs_before_network(self):
+        with mock.patch.dict(os.environ, {'GITHUB_REPOSITORY': 'Example-Owner/harbor'}):
+            for tag, digest in (('main', 'sha256:' + 'a' * 64), ('v1.0.0', 'sha256:' + 'a' * 64),
+                                ('v1.0.1;echo unsafe', 'sha256:' + 'a' * 64), ('v1.0.1', 'latest')):
+                with self.subTest(tag=tag), mock.patch.object(check, 'run') as run:
+                    with self.assertRaises(check.QualificationError):
+                        check.verify_published(tag, digest)
+                    run.assert_not_called()
+            with mock.patch.object(check, 'run', return_value=b'commit\n'):
+                with self.assertRaises(check.QualificationError):
+                    check.verify_published('v1.0.1', 'sha256:' + 'a' * 64)
 
     def test_stable_versions_only(self):
         self.assertEqual(check.version('1.0.1'), '1.0.1')

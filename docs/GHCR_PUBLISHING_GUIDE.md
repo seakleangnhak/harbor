@@ -57,7 +57,19 @@ Publishing uses pinned action commits, immutable Node/Go/distroless base indices
 
 The job rebuilds the same validated release source/version and arguments for both platforms. OCI source/version/revision/description/MIT/documentation labels are added. This published index includes SBOM and minimal BuildKit provenance; its digest differs from a no-attestation local smoke image. Attestations describe build contents, not an independent security review or signature. There is no OIDC/keyless signing or GitHub artifact-attestation claim, and no corresponding extra token permissions.
 
-Before publication, a built-in-token package API check permits a genuine not-found response or requires an existing private package linked to this repository; authorization and malformed responses fail closed. After publication, private visibility and repository linkage must be confirmed. The workflow inspects the immutable index for `linux/amd64` and `linux/arm64`, permits only matching attestation descriptors, then pulls each platform child digest and runs isolated encrypted multipart/checksum/restart/recreation smoke checks. Its summary records `ghcr.io/<owner>/harbor@sha256:…` and per-platform results. Save actual evidence in release notes; local validation cannot establish registry delivery or retention.
+Before publication, a built-in-token package API check permits not-found only for an unpinned first package. Existing packages must be named `harbor`, private and approved. When REST supplies repository linkage, mismatches fail closed. Actual hosted testing found that `GITHUB_TOKEN` entirely omits the repository field, although owner authentication returns it. GitHub's GraphQL API does not support granular-permission registries such as GHCR.
+
+For that response shape, set nonsecret repository variable **`HARBOR_GHCR_PACKAGE_ID`** to the immutable package ID only after the owner independently verifies current private visibility and exact repository association through the Packages API/settings. Automation then requires that exact integer ID and private visibility; any present invalid linkage, changed ID or pinned-package 404 fails closed. This verifies continuity of an owner-approved package, **not current linkage under the workflow token**. Refresh the owner-authenticated association check before each approved release. Never add a PAT to Actions to obtain a larger API response.
+
+The owner-verified pin is configured for the first package. A new installation whose first-push response omits linkage must stop after upload, have its owner review/pin the new package, then verify that existing immutable digest. Do not blindly rerun publishing: creation labels/provenance may change image digests even at the same source. The existing v1.0.1 workflow is immutable; fixes on main apply to later releases.
+
+Read-only workflow `verify-published.yml` qualifies an existing image without rebuilding or moving registry tags. Dispatch it from main as repository owner, supplying an existing annotated stable tag and the actual SHA-256 index digest. It validates tag/main ancestry, package policy, exact raw index SHA-256, both distinct platform children, attestation bindings and SPDX/SLSA predicates, then pulls each child and runs isolated encrypted multipart/checksum/restart/recreation smoke checks. Its summary records source, digest and per-platform results. It receives only `contents: read` and `packages: read`; no build/push path. Original failed publishing runs retain their actual result. [Release evidence](GHCR_RELEASE_REPORT.md).
+
+```sh
+gh workflow run verify-published.yml --ref main \
+  -f release_tag=v1.0.1 \
+  -f digest=sha256:d5c56ecd655e83f298e63f3e97f7df7582aecd9ebdd45b0d6aed6801b36bc855
+```
 
 After approved publication, verify from a clean client:
 

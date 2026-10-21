@@ -40,10 +40,10 @@ def version(value):
     return value
 
 
-def workflow_policy(ci, publish):
-    """Additional fail-closed guards for these two actionlint-validated workflows."""
-    # ponytail: two fixed workflows; use parsed policy if workflow structure expands.
-    for source in (ci, publish):
+def workflow_policy(ci, publish, verification=None):
+    """Additional fail-closed guards for actionlint-validated release workflows."""
+    # ponytail: fixed workflow shapes; use parsed policy when adding more release paths.
+    for source in (ci, publish, *([verification] if verification is not None else [])):
         if any(word in source for word in ('pull_request_target:', 'write-all', 'secrets: inherit')):
             raise QualificationError('Privileged workflow event or inherited secrets forbidden')
         for action in re.findall(r'\buses:\s*([^\s#]+)', source):
@@ -64,15 +64,25 @@ def workflow_policy(ci, publish):
                 '  gate:\n' + owner_gate, '  publish:\n' + owner_gate,
                 '      packages: write\n', '${{ secrets.GITHUB_TOKEN }}',
                 'platforms: linux/amd64,linux/arm64', 'provenance: mode=min', 'sbom: generator=',
-                'python3 scripts/ci_check.py package-check\n', 'python3 scripts/ci_check.py package-check --required\n',
-                'docker pull --platform "$platform" "$IMAGE@$child_digest"',
-                'python3 scripts/ci_check.py docker-smoke --image "$IMAGE@$child_digest" --platform "$platform"',
-                '--revision "$HARBOR_REVISION"', "--format '{{json .SBOM}}'", "--format '{{json .Provenance}}'")
+                'python3 scripts/ci_check.py package-check\n',
+                'python3 scripts/ci_check.py verify-published --tag "v$HARBOR_VERSION" --digest "$DIGEST"',
+                'HARBOR_GHCR_PACKAGE_ID: ${{ vars.HARBOR_GHCR_PACKAGE_ID }}')
     if not all(text in publish for text in required) or '  pull_request:' in publish or 'branches:' in publish:
         raise QualificationError('Publication must remain stable-tag gated after complete validation')
     if (publish.count('packages: write') != 1 or publish.count('python3 scripts/release_gate.py') != 2
             or re.search(r'\b(?:contents|id-token|attestations):\s*write\b', publish)):
         raise QualificationError('Publication permission and immediate pre-login gate required')
+
+    if verification is not None:
+        required = ('  workflow_dispatch:', '      release_tag:', '      digest:', '  packages: read',
+                    "github.ref == 'refs/heads/main'", 'github.actor == github.repository_owner',
+                    'github.triggering_actor == github.repository_owner',
+                    'HARBOR_GHCR_PACKAGE_ID: ${{ vars.HARBOR_GHCR_PACKAGE_ID }}',
+                    'verify-published --tag "$RELEASE_TAG" --digest "$DIGEST"')
+        if (not all(text in verification for text in required)
+                or any(text in verification for text in ('  push:', '  pull_request:', 'docker/build-push-action@'))
+                or re.search(r'\b(?:packages|contents|id-token|attestations):\s*write\b', verification)):
+            raise QualificationError('Published-image verification must remain owner-only and read-only')
 
 
 def package_check(required):
@@ -82,6 +92,9 @@ def package_check(required):
             or not re.fullmatch(re.escape(owner) + r'/[A-Za-z0-9_.-]+', repository, re.I)
             or not os.environ.get('GH_TOKEN')):
         raise QualificationError('Package check needs trusted repository context and workflow token')
+    approved_id = os.environ.get('HARBOR_GHCR_PACKAGE_ID', '')
+    if approved_id and not re.fullmatch(r'[1-9][0-9]{0,19}', approved_id):
+        raise QualificationError('Approved package ID must be a positive decimal integer')
     response = subprocess.run(['gh', 'api', '--hostname', 'github.com', '--include',
                               '-H', 'Accept: application/vnd.github+json',
                               '-H', 'X-GitHub-Api-Version: 2022-11-28',
@@ -91,21 +104,32 @@ def package_check(required):
     status = re.match(r'HTTP/\S+ ([0-9]{3})\b', header)
     if not status or not separator:
         raise QualificationError('Package API returned an invalid response')
-    if status[1] == '404' and not required:
+    if status[1] == '404' and not required and not approved_id:
         return {'package': 'harbor', 'state': 'not_found'}
     if response.returncode or status[1] != '200':
         raise QualificationError('Package access or required package verification failed')
     package = json.loads(body)
-    if (not isinstance(package, dict) or package.get('visibility') != 'private'
-            or not isinstance(package.get('repository'), dict)
-            or not isinstance(package['repository'].get('full_name'), str)
-            or package['repository']['full_name'].lower() != repository.lower()):
-        raise QualificationError('Package must be private and linked to this repository')
-    return {'package': 'harbor', 'visibility': 'private', 'repository_linkage': 'PASS'}
+    if (not isinstance(package, dict) or package.get('name') != 'harbor'
+            or package.get('visibility') != 'private'):
+        raise QualificationError('Package must be harbor and private')
+    if approved_id and (type(package.get('id')) is not int or str(package['id']) != approved_id):
+        raise QualificationError('Package differs from owner-approved package ID')
+    if 'repository' in package:
+        linked = package['repository']
+        if (not isinstance(linked, dict) or not isinstance(linked.get('full_name'), str)
+                or linked['full_name'].lower() != repository.lower()):
+            raise QualificationError('Package repository linkage mismatch')
+        linkage = 'api_verified'
+    elif approved_id:
+        # GITHUB_TOKEN omits this field; owner checks linkage before pinning the package ID.
+        linkage = 'owner_verified_package_id; current linkage requires owner API check'
+    else:
+        raise QualificationError('Package linkage unavailable; owner-verified package ID required')
+    return {'package': 'harbor', 'visibility': 'private', 'repository_linkage': linkage}
 
 
 def workflows():
-    workflow_policy(*[(ROOT / '.github/workflows' / name).read_text() for name in ('ci.yml', 'docker-publish.yml')])
+    workflow_policy(*[(ROOT / '.github/workflows' / name).read_text() for name in ('ci.yml', 'docker-publish.yml', 'verify-published.yml')])
     documentation = check_readme()
     actionlint = os.environ.get('ACTIONLINT') or shutil.which('actionlint')
     if not actionlint:
@@ -334,11 +358,90 @@ def docker_smoke(image, platform, target_version, revision=None):
             run('docker', 'volume', 'rm', volume)
 
 
+def published_index(raw, sbom, provenance, expected_digest):
+    if 'sha256:' + hashlib.sha256(raw).hexdigest() != expected_digest:
+        raise QualificationError('Published index digest mismatch')
+    manifest = json.loads(raw)
+    try:
+        entries = manifest['manifests']
+        platforms = {m['platform']['os'] + '/' + m['platform']['architecture'] for m in entries}
+        assert platforms == {'linux/amd64', 'linux/arm64', 'unknown/unknown'}
+        attestations = [m for m in entries if m['platform'] == {'os': 'unknown', 'architecture': 'unknown'}]
+        assert len(entries) == 4 and len(attestations) == 2
+        evidence = []
+        for platform in ('linux/amd64', 'linux/arm64'):
+            children = [m['digest'] for m in entries
+                        if m['platform']['os'] + '/' + m['platform']['architecture'] == platform]
+            assert len(children) == 1 and re.fullmatch(r'sha256:[0-9a-f]{64}', children[0])
+            bound = [m for m in attestations if m.get('annotations', {}).get('vnd.docker.reference.digest',
+                     m.get('annotations', {}).get('com.docker.reference.digest')) == children[0]]
+            assert len(bound) == 1 and re.fullmatch(r'sha256:[0-9a-f]{64}', bound[0]['digest'])
+            assert bound[0]['annotations'].get('vnd.docker.reference.type',
+                   bound[0]['annotations'].get('com.docker.reference.type')) == 'attestation-manifest'
+            spdx = sbom[platform]['SPDX']
+            slsa = provenance[platform]['SLSA']
+            build = slsa.get('buildDefinition', slsa)
+            materials = build.get('resolvedDependencies', slsa.get('materials'))
+            assert spdx['spdxVersion'].startswith('SPDX-') and spdx['SPDXID'] == 'SPDXRef-DOCUMENT'
+            assert isinstance(spdx['packages'], list) and spdx['packages']
+            assert build['buildType'] in ('https://mobyproject.org/buildkit@v1',
+                   'https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md')
+            assert isinstance(materials, list) and materials
+            evidence.append({'platform': platform, 'child_digest': children[0], 'attestation_digest': bound[0]['digest'],
+                             'spdx_version': spdx['spdxVersion'], 'sbom_packages': len(spdx['packages']),
+                             'slsa_build_type': build['buildType'], 'slsa_materials': len(materials)})
+        assert len({item['child_digest'] for item in evidence}) == 2
+    except (AssertionError, AttributeError, KeyError, TypeError):
+        raise QualificationError('Published platform or attestation validation failed') from None
+    return evidence
+
+
+def verify_published(tag, expected_digest):
+    repository = os.environ.get('GITHUB_REPOSITORY', '')
+    if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+', repository)
+            or not tag.startswith('v') or not VERSION.fullmatch(tag[1:])
+            or tuple(map(int, tag[1:].split('.'))) <= (1, 0, 0)
+            or not re.fullmatch(r'sha256:[0-9a-f]{64}', expected_digest)):
+        raise QualificationError('Trusted repository, annotated stable release and immutable digest required')
+    ref = 'refs/tags/' + tag
+    if run('git', 'cat-file', '-t', ref).strip() != b'tag':
+        raise QualificationError('Published source must have an annotated release tag')
+    revision = run('git', 'rev-parse', ref + '^{commit}').decode().strip()
+    if not re.fullmatch(r'[0-9a-f]{40}', revision):
+        raise QualificationError('Invalid release commit')
+    run('git', 'merge-base', '--is-ancestor', revision, 'refs/remotes/origin/main')
+    package = package_check(True)
+    image = 'ghcr.io/' + repository.split('/')[0].lower() + '/harbor'
+    reference = image + '@' + expected_digest
+    raw = run('docker', 'buildx', 'imagetools', 'inspect', '--raw', reference)
+    sbom = json.loads(run('docker', 'buildx', 'imagetools', 'inspect', '--format', '{{json .SBOM}}', reference))
+    provenance = json.loads(run('docker', 'buildx', 'imagetools', 'inspect', '--format', '{{json .Provenance}}', reference))
+    platforms = published_index(raw, sbom, provenance, expected_digest)
+    tests = []
+    for platform in platforms:
+        child = image + '@' + platform['child_digest']
+        run('docker', 'pull', '--platform', platform['platform'], child)
+        tests.append(docker_smoke(child, platform['platform'], tag[1:], revision))
+    result = {'image': reference, 'tag': tag, 'revision': revision, 'package_policy': package,
+              'platforms': platforms, 'smoke_tests': tests,
+              'attestation_check': 'descriptor bindings and SPDX/SLSA predicates; raw subjects/signatures not inspected'}
+    summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if summary:
+        with Path(summary).open('a') as stream:
+            stream.write('### Published immutable image verified\n\n`' + reference + '`\n\n'
+                         'Tagged source: `' + revision + '`. Both platforms passed pulled-image local-adapter smoke.\n\n'
+                         '```json\n' + json.dumps(result, indent=2, sort_keys=True) + '\n```\n')
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('workflows')
     commands.add_parser('package-check').add_argument('--required', action='store_true')
+    published = commands.add_parser('verify-published')
+    published.add_argument('--tag', required=True)
+    published.add_argument('--digest', required=True)
     reproduce = commands.add_parser('reproducible')
     reproduce.add_argument('--version', required=True, type=version)
     smoke = commands.add_parser('docker-smoke')
@@ -352,6 +455,8 @@ def main():
             result = workflows()
         elif args.command == 'package-check':
             result = package_check(args.required)
+        elif args.command == 'verify-published':
+            result = verify_published(args.tag, args.digest)
         elif args.command == 'reproducible':
             result = reproducible(args.version)
         else:
