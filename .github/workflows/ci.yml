@@ -17,7 +17,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 defaults:
   run:
@@ -61,8 +61,8 @@ jobs:
               python3 scripts/ci_check.py workflows
               go mod verify
               go test -p 1 ./...
-              go test -p 1 -race ./...
-              go test -p 1 -race -tags telegram ./...
+              timeout --signal=QUIT --kill-after=15s 15m go test -p 1 -race ./... -v -timeout 5m
+              timeout --signal=QUIT --kill-after=15s 15m go test -p 1 -race -tags telegram ./... -v -timeout 5m
               go vet -p 1 ./...
               go vet -p 1 -tags telegram ./...
               python3 scripts/ci_check.py reproducible --version "$HARBOR_VERSION"

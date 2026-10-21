@@ -22,6 +22,8 @@ Diagnostic run [39649098387](https://github.com/seakleangnhak/harbor/actions/run
 
 Run [39650017445](https://github.com/seakleangnhak/harbor/actions/runs/39650017445) completed the account interactions and 32 account screenshot/axe contexts before finding invalid grid semantics in the final empty mobile workspace. The file manager now declares grid/header semantics only when rows exist. Screenshot review also found retained Settings scroll hiding a newly selected section's heading; section-keyed content resets that scroll. New checks cover heading/Refresh visibility. Independent suites and both browser engines now finish collecting evidence before reporting an aggregate failure.
 
+Its policy/recovery checks (58 Python tests) and regular Go suite passed, but race verification stopped producing output after `cmd/drive`; no race PASS is claimed. Verbose race output, five-minute package test deadlines and a fifteen-minute command deadline now bound diagnostics. Superseded ordinary CI runs cancel; release publication remains serialized and never cancels an in-progress publication.
+
 Baseline: hosted CI run [39584667776](https://github.com/seakleangnhak/harbor/actions/runs/39584667776) took 11m47s. Backend job took 11m43s, including 4m13s for two cold-cache builds. New measurements will be compared honestly; browser checks add coverage absent from that baseline.
 
 ## Upgrade and limitations
