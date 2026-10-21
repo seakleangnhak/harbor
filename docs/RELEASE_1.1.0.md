@@ -18,18 +18,20 @@
 | Independent onboarding/storage review | PASS, scoped | No concrete release blocker found; no speculative refactor |
 | Frontend tests/typecheck/production build | PASS | 29 tests; Node 24; isolated no-network container |
 | Default/tagged Go tests/race/vet | PENDING | Fresh isolated checks; no personal state |
-| Python policy/recovery/qualification tests | PENDING | Full discovery suite |
-| Chromium/WebKit and axe | PENDING | Disposable local adapter and controlled Telegram UI doubles |
-| Production Dockerfile AMD64/ARM64 | PENDING | Pinned build stages, no runtime credentials |
-| Exact-image web setup/checksum/resume/recreation | PENDING | Both platforms, disposable local adapter |
+| Python policy/recovery/qualification tests | PASS | 49 tests; fresh no-network sandbox, compiled recovery CLI |
+| Chromium/WebKit and axe | PASS | 180 layouts/theme combinations, 180 axe audits, zero violations/page errors; actual 208,896-byte UI roundtrip per browser; Telegram UI simulated |
+| Production Dockerfile AMD64/ARM64 | PASS | Actual source Dockerfile built both platforms locally; no runtime credentials |
+| Exact-image web setup/checksum/resume/recreation | PARTIAL | ARM64 passed 104,923,157-byte encrypted multipart roundtrip, Range, auth/CSRF, web setup lockout, restart/resume/recreation and legacy init; AMD64 running |
 | Hosted main/release CI and GHCR publication | NOT TESTED | Must record actual run IDs/results |
 | Registry index/labels/SBOM/provenance/pulled image | NOT TESTED | Must record immutable digest |
 | Live browser Telegram authorization/new 100 MiB remote storage | NOT TESTED | Earlier live qualification remains separately scoped |
 | Live cross-datacenter Telegram retrieval | NOT TESTED | Deterministic protocol coverage retained |
 
-Application/tests run inside bounded no-network, read-only-root containers with synthetic fixtures. Reviewed Docker orchestration uses the host CLI; no socket is mounted in target/test containers. Dependency-fetch build stages may access public registries without application credentials.
+Application/unit/browser tests run inside bounded no-network, read-only-root containers with synthetic fixtures. Exact-image HTTP smoke uses a dedicated loopback-published Docker bridge with outbound masquerading, DNS and peer connectivity disabled. Reviewed Docker orchestration uses the host CLI; no socket is mounted in target/test containers. Dependency-fetch build stages may access public registries without application credentials.
 
-The initial default race run hit a 10-second test response-header deadline while awaiting authenticated 100 MiB Range output under concurrent compilation. Test-only process/client/header deadlines are now bounded at 300/90/60 seconds; production timeouts and integrity checks remain unchanged. Rerun results must be recorded before acceptance.
+The initial default race run hit a 10-second test response-header deadline while awaiting authenticated 100 MiB Range output under concurrent compilation. Test-only process/client/header deadlines are now bounded at 300/90/60 seconds; production timeouts and integrity checks remain unchanged. Focused recovery race rerun passed in 18.874 seconds; full rerun continues. Initial exact-image smoke also exposed Docker Desktop suppressing published ports on `--internal` networks; dedicated bridge controls above preserve host ingress and passed actual ARM64 smoke.
+
+Scans: Gitleaks 8.30.1 found zero findings in staged source, all 18 reachable sanitized commits and actual Docker build context. These scoped pattern checks do not constitute an independent security audit.
 
 ## Distribution and upgrades
 

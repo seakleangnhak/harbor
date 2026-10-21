@@ -28,11 +28,10 @@ Backups contain private metadata, content key, account authorization, and allowl
    ```sh
    bin/harbor-recovery backup \
      --data-dir /absolute/private/harbor-data \
-     --output /absolute/private/backups/harbor-unique.harbor \
-     --config-file /absolute/private/harbor.env
+     --output /absolute/private/backups/harbor-unique.harbor
    ```
 
-4. Supply `--key-file`, `--session-file`, and/or `--owner-password-file` with explicit private paths when those materials are stored outside the data directory. Telegram backups require `--config-file`; no implicit dotenv loading occurs. The supplied account/channel configuration must match the existing storage binding. If no saved owner-password file exists, the owner must still know the existing login password after recovery.
+4. Browser-onboarded drives automatically load the private `<data>/setup` bundle's configuration, owner password and Telegram session; omit `--config-file` instead of supplying an unrelated legacy file. Legacy Telegram installations require `--config-file /absolute/private/harbor.env` describing their effective runtime configuration; no implicit dotenv loading occurs. The supplied account/channel configuration must match the existing storage binding. Supply `--key-file`, `--session-file`, and/or `--owner-password-file` with explicit private paths when those materials are stored outside the data directory. If no saved owner-password file exists, the owner must still know the existing login password after recovery.
 5. Verify the archive, then restart the original installation:
 
    ```sh
@@ -144,6 +143,6 @@ Phase 6 qualifies real Telegram in the exact exported image: multipart resume, r
 
 ## Open-source image updates
 
-Current Compose builds source locally; no GHCR package is assumed available. [Publishing guide](GHCR_PUBLISHING_GUIDE.md) explains protected tags, image digests and approval requirements. After an approved image exists, pin its immutable digest in a private Compose override, retain the same project/service/volume identity, create and verify an encrypted offline backup, and follow the upgrade/rollback procedure above. Never run initialization against an existing bound volume or change a key to make an upgrade start. Published attestations are build metadata, not independent security certification.
+Compose targets `ghcr.io/seakleangnhak/harbor:1.1.0` by default. Use `--no-build --pull always` to pull the published release, or `--build` to build the checkout locally under the configured `HARBOR_IMAGE` reference; a local build does not push anything. [Publishing guide](GHCR_PUBLISHING_GUIDE.md) explains protected tags, image digests and approval requirements. Confirm completed release qualification, then set `HARBOR_IMAGE` to its independently verified immutable digest, retain the same project/service/volume identity, create and verify an encrypted offline backup, and follow the upgrade/rollback procedure above. Never run initialization against an existing bound volume or change a key to make an upgrade start. Published attestations are build metadata, not independent security certification.
 
 For redistribution retain `LICENSE`, `THIRD_PARTY_NOTICES.md`, browser license/font notices and bundled `fonts-liberation-1.07.4-source.tar.gz`. Runtime images already contain these files. Supply configuration only at container startup, never through build arguments. Private package access, GitHub/GHCR delivery and public deployment need separate qualification.

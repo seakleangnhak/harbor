@@ -21,11 +21,10 @@ Scope: private, single-owner recovery on a trusted macOS or Linux host. Use a fr
    /usr/bin/env -i PATH=/usr/bin:/bin \
      /absolute/harbor/bin/harbor-recovery backup \
      --data-dir /absolute/private/harbor-data \
-     --output /absolute/private/backups/harbor-unique.harbor \
-     --config-file /absolute/private/harbor.env
+     --output /absolute/private/backups/harbor-unique.harbor
    ```
 
-   The explicit config must describe the running drive's actual bound adapter and Telegram target, including any previously applied runtime overrides. The recovery CLI never implicitly loads `.env`. Add `--key-file`, `--session-file` or `--owner-password-file` with explicit private paths if those sources are stored outside the data directory. Local-adapter backup does not require Telegram configuration.
+   Browser-onboarded drives automatically use the private `<data>/setup` bundle's configuration, owner password and Telegram session; omit `--config-file` rather than supplying an unrelated legacy file. For legacy Telegram installations, add `--config-file /absolute/private/harbor.env` describing the actual bound adapter and Telegram target, including effective runtime overrides. The recovery CLI never implicitly loads `.env`. Add `--key-file`, `--session-file` or `--owner-password-file` with explicit private paths if those sources are stored outside the data directory. Local-adapter backup does not require Telegram configuration.
 4. Verify, then restart the original installation through its normal supervisor:
 
    ```sh

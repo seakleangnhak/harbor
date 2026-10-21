@@ -16,7 +16,7 @@ printf 'Setup token: %s\n' "$DRIVE_SETUP_TOKEN"
 
 Open [http://127.0.0.1:8080](http://127.0.0.1:8080). Paste the token into setup; do not put it in a URL, chat, screenshot or issue report. The token authorizes first-run setup, while your chosen owner password authorizes later sign-ins. No `init`, generated-password command, or terminal Telegram authentication is required.
 
-Compose builds the local image `harbor:local`, binds host HTTP to loopback, and persists `/data` in `harbor-local_drive-data`. The runtime is non-root with a read-only root filesystem, protected data directory, dropped capabilities, 2 CPU/768 MiB limits and a 512 MiB soft Go memory limit. Compilation needs more memory than the running service.
+With `--build`, Compose builds the checkout and tags it using `HARBOR_IMAGE`, which defaults to `ghcr.io/seakleangnhak/harbor:1.1.0`. This builds locally; it does not push an image. Compose binds host HTTP to loopback and persists `/data` in `harbor-local_drive-data`. The runtime is non-root with a read-only root filesystem, protected data directory, dropped capabilities, 2 CPU/768 MiB limits and a 512 MiB soft Go memory limit. Compilation needs more memory than the running service.
 
 Keep the same Compose project name and volume on later starts:
 

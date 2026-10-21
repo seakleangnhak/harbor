@@ -306,7 +306,7 @@ def docker_smoke(image, platform, target_version, revision=None):
     network_created = False
     setup_token = secrets.token_urlsafe(32)
     options = ['--platform', platform, '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
-               '--network', network,
+               '--network', network, '--dns', '127.0.0.1',
                '--pids-limit=128', '--memory=768m', '--cpus=2', '--tmpfs', '/tmp:size=128m,noexec,nosuid,nodev',
                '--env', 'DRIVE_ENV_FILE=-', '--env', 'DRIVE_STORAGE=local',
                '--env', 'DRIVE_SECURE_COOKIES=false', '--env', 'DRIVE_ALLOW_REMOTE_HTTP=true']
@@ -316,7 +316,10 @@ def docker_smoke(image, platform, target_version, revision=None):
             raise QualificationError('Refusing to reuse an existing Docker volume')
         run('docker', 'volume', 'create', volume)
         volume_created = True
-        run('docker', 'network', 'create', '--internal', network)
+        # Internal networks suppress published ports on Docker Desktop. Keep local
+        # ingress while disabling outbound masquerading, DNS and peer connectivity.
+        run('docker', 'network', 'create', '--opt', 'com.docker.network.bridge.enable_ip_masquerade=false',
+            '--opt', 'com.docker.network.bridge.enable_icc=false', network)
         network_created = True
         with tempfile.TemporaryDirectory(prefix='harbor-ci-password-') as temporary:
             password = Path(temporary) / 'owner-password'
