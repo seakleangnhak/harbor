@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Correct workflow-token package validation when GHCR omits repository metadata: private visibility plus owner-verified immutable package-ID continuity, with explicit owner linkage checks.
+- Read-only verification of an existing annotated release/index, platform attestations and pulled-image smoke without rebuilding or changing version tags. These fixes are on main after immutable v1.0.1.
+
 ## 1.0.1 — 2026-10-21
 
 - Original Harbor lighthouse branding, reviewed demonstration screenshots and refreshed setup/recovery README.
@@ -7,7 +12,7 @@
 - Read-only pull-request/main CI, default/tagged Go checks, frontend verification, reproducible binaries and credential-free AMD64/ARM64 image smoke checks.
 - Owner-only stable-tag GHCR workflow with verified action pins, multiarch builds, SBOM/provenance, OCI labels and built-in token; no publication from PRs or main. Full release CI, private-package checks and pulled-image smoke are required.
 - Runtime version injection and explicit-version local packaging preserve the immutable original v1.0.0 tag outside the sanitized repository.
-- Authorized private publication of audited source; hosted main/PR CI passed all five jobs. Release-runbook Git commands require explicit audited source path and root identity. Owner approved v1.0.1 and private GHCR publication; actual registry results must be recorded after the release run. Public visibility requires separate approval. See [publishing guide](docs/GHCR_PUBLISHING_GUIDE.md).
+- Authorized private publication of audited source; hosted main/PR CI passed all five jobs. Release-runbook Git commands require explicit audited source path and root identity. Owner approved v1.0.1 and private GHCR publication; the image was delivered privately and independently qualified on AMD64/ARM64. Original publishing run failed its metadata guard; follow-up read-only verification passed against the unchanged digest. [Registry evidence](docs/GHCR_RELEASE_REPORT.md). Public visibility requires separate approval. See [publishing guide](docs/GHCR_PUBLISHING_GUIDE.md).
 
 ## 1.0.0 — 2026-10-21
 

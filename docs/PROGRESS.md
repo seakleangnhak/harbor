@@ -1,8 +1,10 @@
 # Progress
 
-## Private v1.0.1 release — authorized, qualification in progress
+## Private v1.0.1 release — artifact qualification PASS
 
-Owner approved GitHub release and GHCR package publication; repository/package visibility remain private. Only audited sanitized history is used. Hosted main/PR CI already passed; final source and tagged-release CI must pass again. Release agent owns owner-only guards, private-package checks and immutable pulled-image verification; QA reviews Docker/registry checks; community agent reviews notes/license/assets; coordinator owns integration, scans, commits, tags and publication. Original deployment/history/v1.0.0 remain untouched. Actual registry outcomes will be recorded after execution; live cross-DC remains NOT TESTED.
+Owner-authorized sanitized source/tag, [GitHub Release v1.0.1](https://github.com/seakleangnhak/harbor/releases/tag/v1.0.1) and private GHCR publication completed. Full tagged Go/default/Telegram/race/vet/reproducibility, frontend and both Docker jobs passed. Actual package index `sha256:d5c56ecd655e83f298e63f3e97f7df7582aecd9ebdd45b0d6aed6801b36bc855` passed local and hosted immutable-image checks, both architecture encrypted multipart/checksum/restart/recreation smokes, labels/SBOM/provenance and scoped image-content scans. [Exact receipt](GHCR_RELEASE_REPORT.md).
+
+Original publisher remains FAIL after successful upload because GITHUB_TOKEN omitted package repository metadata; retry stopped before login/build/push. Owner API confirmed correct private association, then pinned nonsecret immutable package ID. Follow-up helper/workflow changes on main passed 44 local Python tests/actionlint, all five hosted main CI jobs and read-only hosted verification without moving tag or image. Publishing automation remains PARTIAL until a future approved release exercises the amendment. Original deployment/history/v1.0.0 remain preserved; public visibility not authorized; live cross-DC remains NOT TESTED.
 
 ## Final publication gate — local preparation
 

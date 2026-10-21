@@ -1,6 +1,6 @@
 # GitHub and GHCR release guide
 
-Status at release preparation: **Private source publication PASS; hosted main/PR CI PASS; GHCR publication NOT TESTED.** Owner authorized **v1.0.1** and private GHCR publication. Registry success requires the actual tagged run and pulled-image checks; public visibility remains separately gated. [Earlier hosted evidence](REMOTE_VALIDATION_REPORT.md). Existing original annotated `v1.0.0` stays at `f6c49fcd2a52e365c6cfe84395245112a105f929`.
+Current status: **Private source and v1.0.1 GHCR artifact qualification PASS; original publishing automation PARTIAL.** [Exact registry/verifier evidence](GHCR_RELEASE_REPORT.md). Original tagged workflow failed after upload; read-only follow-up verification passed against unchanged image. Main fixes have not been exercised by a new release publication. Owner authorized **v1.0.1** and private GHCR publication. Tagged CI and actual pulled-image checks are recorded separately; public visibility remains separately gated. [Earlier hosted evidence](REMOTE_VALIDATION_REPORT.md). Existing original annotated `v1.0.0` stays at `f6c49fcd2a52e365c6cfe84395245112a105f929`.
 
 **Publication lineage:** use the [sanitized source repository](PUBLIC_REPOSITORY_PLAN.md), which has no original commits or `v1.0.0` tag. The tag identity above belongs only to the retained private development checkout. Follow the [private-first sequence](FIRST_GITHUB_RELEASE.md); original history and old source archives are blocked from publication by the [privacy audit](PUBLICATION_PRIVACY_AUDIT.md).
 

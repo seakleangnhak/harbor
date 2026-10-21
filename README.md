@@ -10,7 +10,7 @@
 <p align="center">A self-hosted, single-owner cloud drive with encrypted Telegram storage,<br>resumable transfers, and a thoughtful file manager.</p>
 
 <p align="center">
-  <a href="docs/PHASE6_FINAL_REPORT.md"><img src="https://img.shields.io/badge/local_baseline-v1.0.0-244c68?style=flat-square" alt="Historical local baseline v1.0.0"></a>
+  <a href="https://github.com/seakleangnhak/harbor/releases/tag/v1.0.1"><img src="https://img.shields.io/badge/release-v1.0.1-244c68?style=flat-square" alt="Harbor v1.0.1 private release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-426f65?style=flat-square" alt="MIT license"></a>
   <a href="docs/KNOWN_LIMITATIONS.md"><img src="https://img.shields.io/badge/scope-private_personal_use-576776?style=flat-square" alt="Qualified for private personal use"></a>
 </p>
@@ -32,7 +32,7 @@
 
 ## Your workspace, on your terms
 
-Distribution starts from a [reviewed source snapshot](docs/PUBLIC_REPOSITORY_PLAN.md). Earlier v1.0.0 reports describe a separate private development history; its commits, tag and local artifacts are not imported. First approved private GitHub/GHCR release: **v1.0.1**, subject to successful tagged CI and registry qualification. Public visibility requires separate approval. [Hosted main/PR CI evidence](docs/REMOTE_VALIDATION_REPORT.md). [Publication gate](docs/PUBLICATION_GO_NO_GO.md) · [First release](docs/FIRST_GITHUB_RELEASE.md).
+Distribution starts from a [reviewed source snapshot](docs/PUBLIC_REPOSITORY_PLAN.md). Earlier v1.0.0 reports describe a separate private development history; its commits, tag and local artifacts are not imported. First private GitHub/GHCR release: **[v1.0.1](https://github.com/seakleangnhak/harbor/releases/tag/v1.0.1)**. Tagged CI and independent AMD64/ARM64 registry qualification passed. Original publishing run failed its package-metadata check; follow-up read-only verification passed without changing tag or image. [Exact results and digest](docs/GHCR_RELEASE_REPORT.md). Public visibility requires separate approval. [Earlier main/PR CI](docs/REMOTE_VALIDATION_REPORT.md). [Publication gate](docs/PUBLICATION_GO_NO_GO.md) · [First release](docs/FIRST_GITHUB_RELEASE.md).
 
 Harbor keeps your file organization and encryption keys on a host you control. Telegram holds authenticated, encrypted chunks; a lightweight Go server connects them to a familiar file manager. A local storage adapter runs the same flow without Telegram credentials, making development and recovery testing practical.
 
@@ -86,7 +86,13 @@ Open **[http://127.0.0.1:8080](http://127.0.0.1:8080)** and sign in with the pas
 
 Compose publishes only on loopback. Its non-root, read-only container keeps SQLite, encryption key, password and session in the persistent `harbor-local_drive-data` volume. Keep the same Compose project name for later restarts. **Do not use `docker compose down -v` on a drive you want to keep.** Use `DRIVE_PORT` in `.env` to change the host port.
 
-This quickstart builds from source. It does not depend on a published GHCR package. [Publishing and image verification](docs/GHCR_PUBLISHING_GUIDE.md) describe the proposed automated release flow.
+This quickstart builds from source. A [private GHCR package](https://github.com/users/seakleangnhak/packages/container/package/harbor) is also available for AMD64 and ARM64. With an already authorized GHCR client, pull the qualified immutable image:
+
+```sh
+docker pull ghcr.io/seakleangnhak/harbor@sha256:d5c56ecd655e83f298e63f3e97f7df7582aecd9ebdd45b0d6aed6801b36bc855
+```
+
+Version tag `1.0.1`, minor `1.0` and `latest` resolve to this index at release qualification; prefer the digest for deployment. Keep existing volume identity and recovery material when using a trusted-image override. [Operations](docs/PRODUCTION_OPERATIONS.md) · [Publishing and image verification](docs/GHCR_PUBLISHING_GUIDE.md).
 
 ### Local development
 

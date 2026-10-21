@@ -1,6 +1,6 @@
 # Publication go/no-go
 
-2026-10-21. **PRIVATE_SOURCE_PUBLICATION = PASS. PRIVATE_IMAGE_RELEASE = AUTHORIZED, pending execution. PUBLIC_VISIBILITY = BLOCKED.** Owner authorized v1.0.1 and private GHCR publication using only audited sanitized source. Full tagged CI and registry delivery checks must pass before release success is claimed. Public visibility requires separate approval. [Earlier remote evidence](REMOTE_VALIDATION_REPORT.md).
+2026-10-21. **PRIVATE_SOURCE_PUBLICATION = PASS. PRIVATE_IMAGE_ARTIFACT = PASS. PUBLISHING_AUTOMATION = PARTIAL. PUBLIC_VISIBILITY = BLOCKED.** Owner authorized v1.0.1 and private GHCR publication using only audited sanitized source. Full tagged CI and separate read-only registry verification passed; original publisher failed after upload and retains its failed result. [Actual release evidence](GHCR_RELEASE_REPORT.md). Public visibility requires separate approval. [Earlier remote evidence](REMOTE_VALIDATION_REPORT.md).
 
 | Gate | Result | Evidence / next action |
 | --- | --- | --- |
@@ -12,9 +12,10 @@
 | Installation and runtime preservation | PASS, source review | Secure local defaults and source-build instructions retained. No application, database, content key or Telegram session changes. Runtime/source fingerprints unchanged. |
 | CI and publishing policy | PASS, local | Fresh actionlint, workflow policy, release-gate tests, README/SVG/link checks; PR/main have no registry publishing path. |
 | Actual GitHub initial main/PR CI | PASS | All five jobs passed in [main run 39552906176](https://github.com/seakleangnhak/harbor/actions/runs/39552906176) and [PR run 39553007811](https://github.com/seakleangnhak/harbor/actions/runs/39553007811). Source scopes recorded in [remote evidence](REMOTE_VALIDATION_REPORT.md). |
-| Actual tagged-release CI | NOT TESTED | Owner-approved v1.0.1 must pass full tagged CI. |
-| GitHub protections / GHCR access | LIMITED | Read-only default tokens. Current private plan lacks branch/ruleset/reviewer protection; approved personal-owner actor guards retain full CI/source/tag checks. Registry access awaits actual publication. |
-| GHCR publication / pulled-image smoke | NOT TESTED | Private publication authorized; digest/platform/attestation inspection, private linkage and both-platform smoke remain required. |
+| Actual tagged-release CI | PASS | All five reusable CI jobs at source `dca22a5`; original publishing run subsequently failed metadata verification. |
+| GitHub protections / GHCR access | LIMITED | Read-only default tokens. Current private plan lacks branch/ruleset/reviewer protection; approved personal-owner actor guards retain full CI/source/tag checks. Built-in-token registry upload and read-only delivery checks passed; owner rechecks package association. |
+| GHCR artifact / pulled-image smoke | PASS | Private package, exact digest/platform/attestation verification and both-platform smoke passed locally and on GitHub. [Receipt](GHCR_RELEASE_REPORT.md). |
+| Original full publishing workflow | FAIL / follow-up PARTIAL | Upload passed, metadata guard failed; main fix and read-only verification passed. No retag/rebuild. Future publisher needs a new approved release test. |
 | Repository/package public visibility | BLOCKED | Separate explicit owner approval required after remote validation. |
 
 ## Release recommendation

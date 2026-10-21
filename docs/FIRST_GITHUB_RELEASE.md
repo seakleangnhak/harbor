@@ -1,5 +1,7 @@
 # First GitHub release
 
+**Current repository:** v1.0.1 is already tagged and its private GHCR digest is qualified. Do not rerun tag creation or original publishing workflow. [Actual release evidence](GHCR_RELEASE_REPORT.md) records the original workflow failure and later read-only verification. Original v1.0.0 remains excluded. Commands below are a runbook for separately approved future publication, not instructions to recreate this release.
+
 **Release runbook.** Earlier private source publication and hosted results are recorded in [validation evidence](REMOTE_VALIDATION_REPORT.md). Owner has now approved **v1.0.1** and private image publication; actual success requires the tagged workflow and delivered-image checks. Public visibility still requires separate approval. All commands operate from the audited sanitized repository, never the original Harbor checkout. Authorization persists within its approved scope; elapsed time is not approval. Do not create or change `v1.0.0`.
 
 ## 1. Private repository and initial push
