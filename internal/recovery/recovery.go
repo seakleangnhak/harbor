@@ -310,6 +310,7 @@ func Backup(ctx context.Context, opts BackupOptions) error {
 	if err != nil {
 		return err
 	}
+	explicitOwnerPassword := opts.OwnerPasswordFile != ""
 	// Web setup keeps one atomically activated private bundle on the data volume.
 	webConfig := filepath.Join(data, "setup", "config.env")
 	if _, err := os.Lstat(webConfig); err == nil {
@@ -353,22 +354,35 @@ func Backup(ctx context.Context, opts BackupOptions) error {
 		{name: "content.key", data: key}, {name: "recovery.env", data: config},
 		{name: "chunk-manifests.jsonl", data: chunks},
 	}
-	explicitOwnerPassword := opts.OwnerPasswordFile != ""
+	var hasProfile bool
+	if err := db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='owner_profile')").Scan(&hasProfile); err != nil {
+		return errors.New("cannot inspect owner recovery metadata")
+	}
+	var passwordChanged bool
+	if hasProfile {
+		if err := db.QueryRowContext(ctx, "SELECT password_changed_at<>'' FROM owner_profile WHERE id=1").Scan(&passwordChanged); err != nil {
+			return errors.New("cannot inspect owner recovery metadata")
+		}
+	}
 	if opts.OwnerPasswordFile == "" {
 		opts.OwnerPasswordFile = filepath.Join(data, "owner-password")
 	}
-	if _, err := os.Lstat(opts.OwnerPasswordFile); err == nil || !errors.Is(err, os.ErrNotExist) {
-		password, err := readPrivate(opts.OwnerPasswordFile, 4096)
-		if err != nil {
-			return err
+	// After a web password change, SQLite holds the active hash. Automatically
+	// discovered files contain only the obsolete initialization password.
+	if !passwordChanged || explicitOwnerPassword {
+		if _, err := os.Lstat(opts.OwnerPasswordFile); err == nil || !errors.Is(err, os.ErrNotExist) {
+			password, err := readPrivate(opts.OwnerPasswordFile, 4096)
+			if err != nil {
+				return err
+			}
+			defer clear(password)
+			if err := checkOwnerPassword(ctx, db, password); err != nil {
+				return err
+			}
+			files = append(files, sourceFile{name: "owner-password", data: password})
+		} else if explicitOwnerPassword {
+			return errors.New("explicit owner password recovery source is missing")
 		}
-		defer clear(password)
-		if err := checkOwnerPassword(ctx, db, password); err != nil {
-			return err
-		}
-		files = append(files, sourceFile{name: "owner-password", data: password})
-	} else if explicitOwnerPassword {
-		return errors.New("explicit owner password recovery source is missing")
 	}
 	if b.Adapter == "telegram" {
 		if opts.SessionFile == "" {

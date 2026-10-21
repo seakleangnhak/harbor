@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -130,6 +131,57 @@ func (s *Server) putChunk(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, u)
 }
 
+func (s *Server) putPart(w http.ResponseWriter, r *http.Request) {
+	index, err := strconv.Atoi(chi.URLParam(r, "index"))
+	part, partErr := strconv.Atoi(chi.URLParam(r, "part"))
+	digest := r.Header.Get("X-Part-SHA256")
+	if err != nil || index < 0 || partErr != nil || part < 0 || digest == "" || !validDigest(digest) {
+		respondError(w, domain.ErrInvalid)
+		return
+	}
+	u, err := s.userUpload(r)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	limit := min(storage.TransportPartSize, u.ChunkSize)
+	if r.ContentLength > limit {
+		respondError(w, &http.MaxBytesError{Limit: limit})
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	u, err = s.cfg.Storage.PutPart(r.Context(), u.ID, index, part, r.Body, strings.ToLower(digest))
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	writeJSON(w, 200, u)
+}
+
+func (s *Server) commitChunk(w http.ResponseWriter, r *http.Request) {
+	index, err := strconv.Atoi(chi.URLParam(r, "index"))
+	if err != nil || index < 0 {
+		respondError(w, domain.ErrInvalid)
+		return
+	}
+	var body struct{}
+	if err = readJSON(w, r, &body); err != nil {
+		respondError(w, err)
+		return
+	}
+	u, err := s.userUpload(r)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	u, err = s.cfg.Storage.CommitChunk(r.Context(), u.ID, index)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	writeJSON(w, 200, u)
+}
+
 func (s *Server) completeUpload(w http.ResponseWriter, r *http.Request) {
 	var body struct{}
 	if err := readJSON(w, r, &body); err != nil {
@@ -205,12 +257,62 @@ func (s *Server) cancelUpload(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-func safeInline(value string) bool {
-	switch value {
-	case "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif", "image/bmp", "image/x-icon", "application/pdf", "text/plain", "audio/mpeg", "audio/ogg", "audio/wav", "audio/x-wav", "audio/mp4", "audio/flac", "audio/webm", "video/mp4", "video/webm", "video/ogg", "video/quicktime":
-		return true
+func inlineContentType(name, value string) string {
+	typeName := ""
+	if strings.TrimSpace(value) != "" {
+		var err error
+		typeName, _, err = mime.ParseMediaType(value)
+		if err != nil {
+			return ""
+		}
 	}
-	return false
+	if typeName == "" || typeName == "application/octet-stream" {
+		switch strings.ToLower(path.Ext(name)) {
+		case ".jpg", ".jpeg", ".jpe":
+			typeName = "image/jpeg"
+		case ".png":
+			typeName = "image/png"
+		case ".gif":
+			typeName = "image/gif"
+		case ".webp":
+			typeName = "image/webp"
+		case ".avif":
+			typeName = "image/avif"
+		case ".bmp":
+			typeName = "image/bmp"
+		case ".ico":
+			typeName = "image/x-icon"
+		case ".heic":
+			typeName = "image/heic"
+		case ".heif":
+			typeName = "image/heif"
+		case ".pdf":
+			typeName = "application/pdf"
+		case ".mp3":
+			typeName = "audio/mpeg"
+		case ".m4a":
+			typeName = "audio/mp4"
+		case ".ogg":
+			typeName = "audio/ogg"
+		case ".wav":
+			typeName = "audio/wav"
+		case ".flac":
+			typeName = "audio/flac"
+		case ".mp4", ".m4v":
+			typeName = "video/mp4"
+		case ".webm":
+			typeName = "video/webm"
+		case ".ogv":
+			typeName = "video/ogg"
+		case ".mov":
+			typeName = "video/quicktime"
+		}
+	}
+	switch typeName {
+	case "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif", "image/bmp", "image/x-icon", "image/heic", "image/heif", "application/pdf", "text/plain", "audio/mpeg", "audio/ogg", "audio/wav", "audio/x-wav", "audio/mp4", "audio/flac", "audio/webm", "video/mp4", "video/webm", "video/ogg", "video/quicktime":
+		return typeName
+	}
+	return ""
 }
 
 // First-byte verification catches a broken starting chunk before HTTP headers.
@@ -287,13 +389,13 @@ func (s *Server) content(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	typeName := n.MimeType
+	typeName := inlineContentType(n.Name, n.MimeType)
 	disposition := "inline"
-	if r.URL.Query().Get("download") == "1" || !safeInline(typeName) {
+	if typeName == "" {
+		typeName = "application/octet-stream"
 		disposition = "attachment"
-		if !safeInline(typeName) {
-			typeName = "application/octet-stream"
-		}
+	} else if r.URL.Query().Get("download") == "1" {
+		disposition = "attachment"
 	}
 	w.Header().Set("Content-Type", typeName)
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": n.Name}))

@@ -8,6 +8,7 @@ import { canShowThumbnail, draggedNodeIds, nextFileIndex, nodeDragType } from '.
 import { errorMessage, fileKind, formatBytes, relativeDate, validateName } from '../utils'
 import { Button, Checkbox, cn } from './ui'
 import { FileIcon } from './FileIcon'
+import { Thumbnail } from './Thumbnail'
 
 export type NodeAction = 'open' | 'download' | 'rename' | 'move' | 'favorite' | 'info' | 'trash' | 'restore' | 'permanent' | 'copy' | 'cut' | 'paste'
 type Clipboard = { mode: 'copy' | 'cut'; ids: string[] }
@@ -34,18 +35,13 @@ function ActionItems({ node, onAction, context = false, clipboard }: { node: Dri
   </>
 }
 
-function Thumbnail({ node }: { node: DriveNode }) {
-  const [loaded, setLoaded] = useState(false), [failed, setFailed] = useState(false)
-  return <>{!loaded && <span className="thumbnail-fallback"><FileIcon node={node} large /></span>}{!failed && <img className={cn('thumbnail-image', loaded && 'thumbnail-image-loaded')} loading="lazy" decoding="async" draggable={false} src={`/api/v1/nodes/${encodeURIComponent(node.id)}/content`} alt="" onLoad={() => setLoaded(true)} onError={() => setFailed(true)} />}</>
-}
-
 export function FileBrowser(props: BrowserProps) {
   const { items, listing, grid, selected, onSelect, loading, error, onRename, onMove, clipboard } = props
   const scrollRef = useRef<HTMLDivElement>(null), dragIds = useRef<string[]>([])
   const [columns, setColumns] = useState(4), [mobile, setMobile] = useState(() => matchMedia('(max-width: 700px)').matches)
   const [rename, setRename] = useState<{ node: DriveNode; name: string; busy: boolean } | null>(null)
   const [notice, setNotice] = useState(''), [moving, setMoving] = useState(false), [dropTarget, setDropTarget] = useState<string | null>(null)
-  const [thumbnails, setThumbnails] = useState(false)
+  const [thumbnails, setThumbnails] = useState(() => { try { return localStorage.getItem('harbor:thumbnails') !== 'false' } catch { return true } })
   const press = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null), pressed = useRef<string | null>(null)
   useEffect(() => {
     const element = scrollRef.current
@@ -56,7 +52,8 @@ export function FileBrowser(props: BrowserProps) {
     media.addEventListener('change', change)
     return () => { observer.disconnect(); media.removeEventListener('change', change); if (press.current) clearTimeout(press.current.timer) }
   }, [])
-  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); setRename(null); setNotice(''); setThumbnails(false) }, [listing.parent_id, listing.view, listing.q, listing.type])
+  useEffect(() => { scrollRef.current?.scrollTo({ top: 0 }); setRename(null); setNotice('') }, [listing.parent_id, listing.view, listing.q, listing.type])
+  useEffect(() => { try { localStorage.setItem('harbor:thumbnails', String(thumbnails)) } catch { /* Thumbnails still work when browser storage is unavailable. */ } }, [thumbnails])
   const beginRename = (node: DriveNode) => { if (!onRename || node.trashed_at) return; setNotice(''); setRename({ node, name: node.name, busy: false }) }
   useEffect(() => { if (props.renameId) { const node = items.find(item => item.id === props.renameId); if (node) beginRename(node) } }, [props.renameId])
   const endRename = () => { const id = rename?.node.id; setRename(null); props.onRenameEnd?.(); requestAnimationFrame(() => { if (id) document.getElementById(`node-${id}`)?.focus() }) }
@@ -120,7 +117,7 @@ export function FileBrowser(props: BrowserProps) {
       onPointerDown={event => startPress(event, node)} onPointerMove={event => { if (press.current && Math.hypot(event.clientX - press.current.x, event.clientY - press.current.y) > 10) cancelPress() }} onPointerUp={cancelPress} onPointerCancel={() => { cancelPress(); pressed.current = null }}
       onClick={event => { if (pressed.current === node.id) { pressed.current = null; event.preventDefault(); return } select(event, node) }} onDoubleClick={() => { if (!rename) onAction('open', node) }} onContextMenu={() => { cancelPress(); if (!selected.has(node.id)) onSelect(node.id, false, false) }} onKeyDown={event => keyboard(event, node)}>
       <div className="file-select-cell" role={grid ? undefined : 'gridcell'}><Checkbox checked={selected.has(node.id)} label={`Select ${node.name}`} onChange={() => onSelect(node.id, true, false)} /></div>
-      <div className={grid ? 'file-card-visual' : 'file-main-cell'} role={grid ? undefined : 'gridcell'}>{grid && thumbnails && canShowThumbnail(node) ? <Thumbnail node={node} /> : <FileIcon node={node} large={grid} />}{!grid && <div className="file-name-wrap">{name(node)}{node.favorite && <Star className="favorite-star" size={12} fill="currentColor" aria-label="Favorite" />}<span className="file-location">{node.kind === 'folder' ? 'Folder' : node.name.includes('.') ? `${node.name.split('.').at(-1)?.toUpperCase()} file` : 'File'}</span></div>}</div>
+      <div className={grid ? 'file-card-visual' : 'file-main-cell'} role={grid ? undefined : 'gridcell'}>{grid && thumbnails && canShowThumbnail(node) ? <Thumbnail key={`${node.id}:${node.updated_at}`} node={node} /> : <FileIcon node={node} large={grid} />}{grid && node.kind === 'file' && ['image', 'video'].includes(fileKind(node)) && node.name.includes('.') && <span className="thumbnail-format">{node.name.split('.').at(-1)?.slice(0, 8).toUpperCase()}</span>}{!grid && <div className="file-name-wrap">{name(node)}{node.favorite && <Star className="favorite-star" size={12} fill="currentColor" aria-label="Favorite" />}<span className="file-location">{node.kind === 'folder' ? 'Folder' : node.name.includes('.') ? `${node.name.split('.').at(-1)?.toUpperCase()} file` : 'File'}</span></div>}</div>
       {grid ? <div className="file-card-meta">{name(node)}<span>{node.kind === 'folder' ? 'Folder' : formatBytes(node.size)}<span>·</span>{relativeDate(node.updated_at)}</span>{node.favorite && <Star className="favorite-star" size={12} fill="currentColor" aria-label="Favorite" />}</div> : <><div className="file-date-cell" role="gridcell" title={new Date(node.trashed_at || node.updated_at).toLocaleString()}>{relativeDate(node.trashed_at || node.updated_at)}</div><div className="file-size-cell" role="gridcell">{node.kind === 'folder' ? '—' : formatBytes(node.size)}</div><div className="file-kind-cell" role="gridcell">{node.kind === 'folder' ? 'Folder' : fileKind(node) === 'other' ? 'File' : fileKind(node).replace(/^./, character => character.toUpperCase())}</div></>}
       <div className="file-action-cell" role={grid ? undefined : 'gridcell'} onClick={event => event.stopPropagation()}><DropdownMenu.Root modal={false}><DropdownMenu.Trigger asChild><button className="icon-button" aria-label={`Actions for ${node.name}`}><MoreHorizontal size={18} /></button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content className="menu-content" align="end" sideOffset={4}><ActionItems node={node} onAction={onAction} clipboard={clipboard} /></DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root></div>
     </div>

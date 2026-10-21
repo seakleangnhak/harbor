@@ -8,7 +8,7 @@ export function Brand({ compact = false }: { compact?: boolean }) {
   return <div className="brand"><span className="brand-mark" aria-hidden="true"><svg width="27" height="27" viewBox="0 0 32 32" fill="none"><path d="M8 5v22M24 5v22M8 16h16" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" /><path d="M13 7v5m6 8v5" stroke="currentColor" opacity=".6" strokeWidth="2" strokeLinecap="round" /></svg></span>{!compact && <span>Harbor<span className="brand-dot">.</span></span>}</div>
 }
 
-export function Login({ onLogin }: { onLogin: () => void }) {
+export function Login({ onLogin, notice }: { onLogin: () => void; notice?: string }) {
   const [password, setPassword] = useState('')
   const [visible, setVisible] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -24,9 +24,10 @@ export function Login({ onLogin }: { onLogin: () => void }) {
       <span className="eyebrow">KEEP WHAT MATTERS</span><h2>Your files.<br /><em>Your own space.</em></h2><p>Organize, preview, and keep your files close. Protected with encryption and private owner access.</p>
     </section>
     <section className="login-form-wrap"><div className="login-form-heading"><span className="login-lock"><LockKeyhole size={21} /></span><h1>Welcome to Harbor</h1><p>Unlock your drive to pick up where you left off.</p></div>
+      {notice && <p className="login-notice" role="status"><ShieldCheck size={17} /><span>{notice}</span></p>}
       <form onSubmit={submit} aria-busy={busy}><label htmlFor="owner-password">Owner password</label><div className="password-input"><input id="owner-password" type={visible ? 'text' : 'password'} value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" autoFocus required placeholder="Enter your password" disabled={busy} aria-invalid={!!error} aria-describedby={error ? 'login-error' : undefined} /><IconButton label={visible ? 'Hide password' : 'Show password'} onClick={() => setVisible(!visible)} disabled={busy}>{visible ? <EyeOff size={17} /> : <Eye size={17} />}</IconButton></div>
         {error && <InlineError id="login-error">{error}</InlineError>}<Button type="submit" variant="primary" className="login-submit" busy={busy} disabled={!password}>{busy ? 'Unlocking…' : 'Unlock drive'}{!busy && <ArrowRight size={17} />}</Button>
-      </form><div className="login-security"><ShieldCheck size={15} /><span>Encrypted storage. Only you have access.</span></div><p className="login-help">Use the owner password configured on your server.</p>
+      </form><div className="login-security"><ShieldCheck size={15} /><span>Encrypted storage. Only you have access.</span></div><p className="login-help">Use your owner password to access this private drive.</p>
     </section>
     <footer className="login-footer"><span>Harbor · Private by design</span><span>Your personal cloud, on your terms.</span></footer>
   </div></main>

@@ -1,3 +1,5 @@
+export type Session = { authenticated: true; owner: string }
+
 export type DriveNode = {
   id: string
   parent_id: string
@@ -29,6 +31,10 @@ export type Upload = {
   total_chunks: number
   received_chunks: number[]
   received_bytes: number
+  part_size?: number
+  staged_chunk?: number
+  staged_parts?: number[]
+  staged_bytes?: number
   status: 'uploading' | 'complete'
   created_at: string
 }

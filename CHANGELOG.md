@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0 — 2026-10-22
+
+- Resumable 4 MiB browser upload parts with individual checksums and encrypted staging; Telegram storage chunks remain 100 MiB. Progress distinguishes sending, durable acceptance, remote saving and final verification. Accepted parts survive retry/reload/restart; recovery archives omit unfinished parts, which require the original file to resend.
+- Repaired PDF compatibility, bounded text streaming and native media lifecycle; lazy image thumbnails, safer MIME/extension handling and actionable preview retry/download states.
+- Owner profile editing and current-password-verified password changes, atomic session revocation and recovery compatibility. Refined responsive Account/Storage/Recovery settings with explicit save/cancel feedback and accessible validation.
+- Minimal first-run environment example. Existing initialized drives, credentials, stored files and manifests remain compatible.
+- CI removes redundant work, retains security/checksum gates and requires successful main CI for the exact release commit before publishing. [Release qualification](docs/RELEASE_1.2.0.md) records actual results and remaining limits.
+
 ## 1.1.0 — 2026-10-21
 
 - First-run browser onboarding for owner-chosen password, local/Telegram storage, QR and optional two-step authorization; protected setup token, same-origin checks and private atomic configuration persistence. Existing initialized drives keep their state.

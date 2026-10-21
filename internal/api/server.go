@@ -40,9 +40,9 @@ type Server struct {
 	handler    http.Handler
 	mutate     sync.Mutex
 	copyWorker sync.Mutex
+	authMu     sync.Mutex
 	loginMu    sync.Mutex
 	attempts   map[string]loginAttempt
-	password   []byte
 }
 
 func OpenDB(path string) (*sql.DB, error) {
@@ -112,6 +112,8 @@ func New(cfg Config) (*Server, error) {
 			r.Use(s.authenticate)
 			r.Get("/auth/session", s.session)
 			r.Post("/auth/logout", s.logout)
+			r.Patch("/auth/profile", s.updateProfile)
+			r.Post("/auth/password", s.changePassword)
 			r.Get("/nodes", s.listNodes)
 			r.Get("/nodes/{id}", s.getNode)
 			r.Post("/folders", s.createFolder)
@@ -124,6 +126,8 @@ func New(cfg Config) (*Server, error) {
 			r.Post("/uploads", s.beginUpload)
 			r.Get("/uploads/{id}", s.uploadStatus)
 			r.Put("/uploads/{id}/chunks/{index}", s.putChunk)
+			r.Put("/uploads/{id}/chunks/{index}/parts/{part}", s.putPart)
+			r.Post("/uploads/{id}/chunks/{index}/commit", s.commitChunk)
 			r.Post("/uploads/{id}/complete", s.completeUpload)
 			r.Delete("/uploads/{id}", s.cancelUpload)
 			r.MethodFunc("GET", "/nodes/{id}/content", s.content)
@@ -159,6 +163,8 @@ func (s *Server) migrate() error {
 	}
 	_, err = tx.Exec(`
 CREATE TABLE IF NOT EXISTS owner (id INTEGER PRIMARY KEY CHECK(id=1), password_hash BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS owner_profile (id INTEGER PRIMARY KEY CHECK(id=1), display_name TEXT NOT NULL DEFAULT 'Owner', password_changed_at TEXT NOT NULL DEFAULT '');
+INSERT OR IGNORE INTO owner_profile(id) VALUES(1);
 CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires_at);
 CREATE TABLE IF NOT EXISTS nodes (

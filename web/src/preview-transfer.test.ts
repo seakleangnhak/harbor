@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { clampImagePan, codeTokens, readPreviewText, textPreviewLimit } from './components/preview-utils.ts'
+import { clampImagePan, codeTokens, mediaPreviewError, readPreviewText, textPreviewLimit } from './components/preview-utils.ts'
 import { checkTransferCapacity, maxUploadChunkSize, readCopyRange, restoreTransfers, storedTransfers, transferDelay, transferSummary, type Transfer } from './transfer-utils.ts'
 
 const digest = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
@@ -105,6 +105,20 @@ test('pointer and keyboard image panning share bounds and fit resets both axes',
   assert.deepEqual(clampImagePan(40, -40, 400, 200, 2), { x: 40, y: -40 })
   assert.deepEqual(clampImagePan(1000, -1000, 400, 200, 2), { x: 200, y: -100 })
   assert.deepEqual(clampImagePan(40, -40, 400, 200, 1), { x: 0, y: 0 })
+})
+
+test('media preview errors distinguish transport failures from native codec limitations', () => {
+  for (const mime of ['video/quicktime', 'audio/aac', 'image/heic']) {
+    assert.match(mediaPreviewError(mime, 2), /connection was interrupted/)
+    assert.doesNotMatch(mediaPreviewError(mime, 2), /codec|HEIC|Safari/)
+  }
+  assert.match(mediaPreviewError('video/quicktime', 4), /MOV playback depends on the browser and video codec/)
+  assert.match(mediaPreviewError('video/mp4', 3), /unsupported.*damaged/)
+  assert.match(mediaPreviewError('audio/ogg', 1), /Playback was interrupted/)
+  for (const mime of ['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence']) {
+    assert.match(mediaPreviewError(mime), /HEIC\/HEIF support varies by browser and device/)
+  }
+  assert.match(mediaPreviewError('image/jpeg'), /could not load.*Retry/)
 })
 
 test('restored browser queue excludes internal server copy stages', () => {

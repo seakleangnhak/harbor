@@ -47,7 +47,13 @@ def safe_members(archive):
 
 
 def base_images(dockerfile):
-    images = re.findall(r'^FROM\s+(?:--platform=\S+\s+)?(\S+)', dockerfile, re.MULTILINE | re.IGNORECASE)
+    images, stages = [], set()
+    for image, alias in re.findall(r'^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?',
+                                   dockerfile, re.MULTILINE | re.IGNORECASE):
+        if image.lower() not in stages:
+            images.append(image)
+        if alias:
+            stages.add(alias.lower())
     if len(images) != 3 or any(not PINNED_IMAGE.fullmatch(image) for image in images):
         raise ValueError('All three Docker base images must use immutable SHA-256 digests')
     return images

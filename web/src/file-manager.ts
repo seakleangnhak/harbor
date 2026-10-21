@@ -1,4 +1,5 @@
 import type { DriveNode } from './types.ts'
+import { previewMime } from './media.ts'
 
 export const nodeDragType = 'application/x-harbor-nodes'
 
@@ -25,6 +26,6 @@ export function nextFileIndex(index: number, key: string, columns: number, count
   return !count || bounded === index ? undefined : bounded
 }
 
-export function canShowThumbnail(node: Pick<DriveNode, 'mime_type' | 'size' | 'trashed_at'>): boolean {
-  return !node.trashed_at && node.size > 0 && node.size <= 8 * 1024 * 1024 && /^image\/(png|jpeg|gif|webp|avif|bmp)$/.test(node.mime_type)
+export function canShowThumbnail(node: Pick<DriveNode, 'kind' | 'name' | 'mime_type' | 'size' | 'trashed_at'>): boolean {
+  return node.kind === 'file' && !node.trashed_at && node.size > 0 && node.size <= 8 * 1024 * 1024 && /^image\/(png|jpeg|gif|webp|avif|bmp|heic|heif)$/.test(previewMime(node))
 }

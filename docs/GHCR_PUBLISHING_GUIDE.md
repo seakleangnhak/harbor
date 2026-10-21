@@ -1,6 +1,6 @@
 # GitHub and GHCR release guide
 
-Current release: **[v1.1.0](https://github.com/seakleangnhak/harbor/releases/tag/v1.1.0)**, published after owner-authorized sanitized-source push, annotated release tag and full hosted validation. [Current qualification](RELEASE_1.1.0.md) records actual results. [v1.0.1 receipt](GHCR_RELEASE_REPORT.md) remains historical: its original upload succeeded but publisher failed the metadata guard; later read-only verification passed. No historical tag/image is overwritten.
+Release source: **v1.2.0**; [current qualification](RELEASE_1.2.0.md) records actual execution/publication status. [v1.1.0 receipt](RELEASE_1.1.0.md) and [v1.0.1 receipt](GHCR_RELEASE_REPORT.md) remain historical. No historical tag/image is overwritten.
 
 Owner API preflight found the existing GHCR package **public** and linked to this repository; the source repository remains **private**. This release does not change either visibility. `HARBOR_GHCR_PACKAGE_ID` pins the existing package; `HARBOR_GHCR_PACKAGE_VISIBILITY=public` pins its observed state. Forks default to private. Recheck linkage and visibility with the owner API before each release; a different/invalid value fails closed.
 
@@ -12,7 +12,7 @@ Owner API preflight found the existing GHCR package **public** and linked to thi
 2. Obtain separate authorization to create/publish the repository, push commits/tags and publish images. Local preparation does not grant it. Configure the chosen GitHub remote only afterward.
 3. Use `main` as the default branch. Enable Actions with a **read-only default GITHUB_TOKEN**, restrict Actions to approved publishers, and require full-SHA action pins. Do not grant fork pull requests write tokens or secrets. Do not enable automatic approval of fork workflows.
 4. Protect `main`: require pull-request review and successful CI jobs; dismiss stale reviews; block force pushes/deletion. Protect `v*` tags against creation/update/deletion except approved maintainers. Review workflow changes as privileged code. No owner-specific `CODEOWNERS` is invented here; configure one after maintainers are chosen.
-5. Current personal-repository release process requires explicit owner approval, then both `github.actor` and `github.triggering_actor` must equal `github.repository_owner` in the gate and publish jobs. Full tagged-release CI and source/tag checks remain mandatory. Current private plan lacks the intended environment-review protection; this owner-only process does not claim independent review or branch protection. It fails closed for organization-owned repositories until an approved maintainer/reviewer policy replaces it. Add protected environments/rulesets when supported; do not change visibility or billing to bypass restrictions.
+5. Current personal-repository release process requires explicit owner approval, then both `github.actor` and `github.triggering_actor` must equal `github.repository_owner` in the gate and publish jobs. Successful main CI for the exact release commit and source/tag checks remain mandatory. Current private plan lacks the intended environment-review protection; this owner-only process does not claim independent review or branch protection. It fails closed for organization-owned repositories until an approved maintainer/reviewer policy replaces it. Add protected environments/rulesets when supported; do not change visibility or billing to bypass restrictions.
 6. Enable secret scanning/push protection and dependency alerts where available. Enable and verify private vulnerability reporting when public visibility supports it, before announcement; while private, use the security policy's fallback. Dependabot checks Go, npm, Docker and Actions weekly. Check branch-protection plan availability; no remote setting is claimed to be configured.
 7. Review existing GHCR package ownership. The built-in token must be allowed Actions write access to this repository's `harbor` package. Do not adopt an unrelated existing package. New GHCR packages normally start private. Workflows compare visibility against `HARBOR_GHCR_PACKAGE_VISIBILITY` (default `private`, only `private` or `public` accepted), without changing it. Pin an existing owner-approved package ID; change visibility only through a separately approved owner action.
 
@@ -22,18 +22,18 @@ Owner API preflight found the existing GHCR package **public** and linked to thi
 | --- | --- | --- |
 | Pull request | Workflow validation; Go default/tagged tests, race, vet and reproducibility; frontend; both image architectures and local-adapter smoke | Read-only token, no login/push |
 | Push to `main` | Same CI | No login/push; no `latest` update |
-| Stable annotated tag newer than v1.0.0 | Owner-only release gate, complete reusable CI, owner-only publish job | Built-in `GITHUB_TOKEN`, `contents: read` + `packages: write` only in publish job |
+| Stable annotated tag newer than v1.0.0 | Owner-only release gate, successful exact-commit main CI proof, owner-only publish job | Built-in `GITHUB_TOKEN`; verification gets `actions: read`, publishing gets `packages: write` |
 | Manual dispatch | Same gates, only when selected workflow ref is the exact existing annotated stable tag named by input | Same owner-only publish job |
 
 The gate rejects branch refs, prereleases, malformed tags, lightweight tags, historical v1.0.0, mismatched input/ref/commit, source outside `origin/main`, and a version older than another stable tag. It accepts no user-supplied registry, image name, build context or arbitrary Docker tag. Manual dispatch cannot turn `main` into a release. Repository rules remain necessary: maintainers who can modify a publishing workflow are trusted.
 
-For repository `OWNER/REPOSITORY`, image is `ghcr.io/<lowercase-owner>/harbor`. This repository publishes `ghcr.io/seakleangnhak/harbor`. Stable **v1.1.0** produces exactly `1.1.0`, `1.1` and `latest`. There is no automatic major `1` tag. Only stable successful releases update aliases; older patch backports are rejected by this workflow to prevent moving `latest` backward.
+For repository `OWNER/REPOSITORY`, image is `ghcr.io/<lowercase-owner>/harbor`. This repository publishes `ghcr.io/seakleangnhak/harbor`. Stable **v1.2.0** produces exactly `1.2.0`, `1.2` and `latest`. There is no automatic major `1` tag. Only stable successful releases update aliases; older patch backports are rejected by this workflow to prevent moving `latest` backward.
 
 ## Current and future releases
 
 `v1.0.1` and `v1.1.0` already exist; never recreate, move or force-push them. [Current qualification](RELEASE_1.1.0.md) records the approved v1.1.0 source and publication checks. The [first-release sequence](FIRST_GITHUB_RELEASE.md) is historical v1.0.1 guidance, not a command to repeat that tag.
 
-For a future release, obtain owner authorization, select an unused stable version, finalize its changelog and review the exact sanitized source commit. Require an empty working tree, `main`, a successful hosted CI run for that commit, absent local/remote target tag, and approved package identity/visibility. Create and normally push one annotated tag at the approved SHA. Full release validation still runs before publication.
+For a future release, obtain owner authorization, select an unused stable version, finalize its changelog and review the exact sanitized source commit. Require an empty working tree, `main`, a successful hosted CI run for that commit, absent local/remote target tag, and approved package identity/visibility. Create and normally push one annotated tag at the approved SHA. The publisher checks the newest main push CI run for that exact SHA and rejects missing, queued, running or failed results; it does not rerun an already successful complete suite. Image construction and delivered-image verification still run before declaring release success.
 
 Manual dispatch can retry an approved existing tag only after reviewing the previous run and registry state; select that same tag as the workflow ref. Do not blindly rerun after upload or overwrite an immutable version. The original v1.0.0 tree predates these workflows; never move it to add automation.
 
@@ -78,7 +78,7 @@ python3 scripts/release.py --ref v1.1.0 --version 1.1.0 \
 (cd output/releases/v1.1.0-arm64 && shasum -a 256 -c SHA256SUMS)
 ```
 
-Repeat with `linux/amd64` and separate output/image names. `--version` injects diagnostics and OCI version metadata; the current source default is 1.1.0. Go binary reproducibility is checked in CI. Multiarch index/attestation bytes and registry tags are different artifacts from the historical single-platform v1.0.0 image.
+Repeat with `linux/amd64` and separate output/image names. `--version` injects diagnostics and OCI version metadata; the current source default is 1.2.0. CI compares two Go binary outputs using a shared compilation cache; this checks output equality, not independent cold compilation. Multiarch index/attestation bytes and registry tags are different artifacts from the historical single-platform v1.0.0 image.
 
 ## Older release, without changing history
 

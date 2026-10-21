@@ -7,16 +7,18 @@ Base: `/api/v1`. JSON snake_case. Root folder ID is empty string (`""`), never a
 ```ts
 type Node = { id: string; parent_id: string; name: string; kind: 'file'|'folder'; size: number; mime_type: string; sha256: string; favorite: boolean; trashed_at: string|null; created_at: string; updated_at: string };
 type Crumb = { id: string; name: string };
-type Upload = { id: string; name: string; parent_id: string; mime_type: string; size: number; sha256: string; chunk_size: number; total_chunks: number; received_chunks: number[]; received_bytes: number; status: 'uploading'|'complete'; created_at: string };
+type Upload = { id: string; name: string; parent_id: string; mime_type: string; size: number; sha256: string; chunk_size: number; total_chunks: number; received_chunks: number[]; received_bytes: number; part_size?: number; staged_chunk?: number; staged_parts?: number[]; staged_bytes?: number; status: 'uploading'|'complete'; created_at: string };
 ```
 
 ## Authentication
 
 - `GET /ready` outside API: normal API returns 200 `{status:"ready"}` or503 `{status:"unready"}`; SQLite ping and cached Telegram connection, no identities. First-run server returns 503 until completion and normal startup; clients must not assume a JSON body during setup.
 - `GET /health` outside API: 200 liveness; normal API returns `{status:"ok"}`, first-run server may return an empty body. No secrets, health only.
-- `GET /auth/session`: 200 `{ authenticated:true, owner:"Owner" }`, or 401.
+- `GET /auth/session`: 200 `{ authenticated:true, owner:string }`, or 401. `owner` is the saved display name (default `"Owner"`).
 - `POST /auth/login` `{ password:string }`: 200 session response, sets `drive_session` HttpOnly cookie. Password comes from guarded first-run setup or existing legacy initialization; no public registration.
 - `POST /auth/logout`: 204, revokes session and clears cookie.
+- `PATCH /auth/profile` `{display_name:string}`: authenticated, same-origin; 200 session response with updated `owner`. Trimmed name must contain 1–80 Unicode characters, valid UTF-8 and no controls. Changes only the owner's display name.
+- `POST /auth/password` `{current_password:string,new_password:string}`: authenticated, same-origin; verifies current password with bounded attempts. New password must contain 12–72 UTF-8 bytes without CR/LF. Wrong current password returns403 `incorrect_password`; the existing session remains valid. Success atomically updates the bcrypt hash and revokes **all** web sessions, returns204 and clears the current cookie. Sign in again with the new password. Invalid input returns400; exhausted attempts return429. Passwords never enter URLs, logs or browser persistence.
 - Browser fetch uses `credentials:'same-origin'`. Same-origin browser mutation requests accepted. Cross-origin Origin/Sec-Fetch-Site rejected; no blanket CORS.
 
 ## Guarded first-run setup
@@ -73,9 +75,13 @@ Completion requires an owner password and, for Telegram, successful account/chan
 - New upload sessions use `chunk_size=104857600` (100 MiB). Existing 4 MiB sessions/files retain their recorded geometry. This is not a total-file cap; the API ceiling remains `1099511627776` bytes (1 TiB). Clients must use each returned session's chunk size when slicing/resuming.
 - `GET /uploads` returns `{items:Upload[]}` (incomplete sessions; may include completed unpublished sessions).
 - `GET /uploads/{id}` returns Upload, including received indices for resume.
+- `part_size` advertises resumable client transport, normally `4194304` (4 MiB), or the persisted storage chunk size if smaller. `received_bytes`/`received_chunks` count only encrypted chunks committed to the storage adapter. `staged_chunk` (including index `0`), `staged_parts` and `staged_bytes` describe encrypted local parts for at most one uncommitted storage chunk; they are not published file content. Clients must validate returned geometry, refresh status after ambiguous failures and reselect the original file after reload.
+- `PUT /uploads/{id}/chunks/{index}/parts/{part}` raw octet-stream, required `X-Part-SHA256` for this HTTP body's plaintext digest. Exactly one part, at most `part_size` bytes; final part of each storage chunk may be smaller. Returns Upload, 200, after encrypted local persistence. Identical retry idempotent; different bytes or another pending storage chunk =>409. A part for an already committed chunk also returns409; refresh status and skip that chunk. Authentication and same-origin policy apply.
+- `POST /uploads/{id}/chunks/{index}/commit` `{}`: authenticate and assemble all staged parts in order, then encrypt/upload one existing storage chunk and persist its manifest entry. Returns Upload, 200, only after storage acknowledgement. Retry of an already committed chunk is idempotent. A remote failure retains staged parts; missing/corrupt parts must be resent from the original file. This request carries no file body and can take longer than part uploads.
 - `PUT /uploads/{id}/chunks/{index}` raw octet-stream, exact expected chunk size; optional `X-Chunk-SHA256` for client integrity. Returns Upload, 200. Identical retry idempotent; different retry rejected, 409. Limit one chunk body to chunk size + 1. Indices zero-based.
 - `POST /uploads/{id}/complete` `{}`: verify all chunks and whole digest, then publish Node; 200 Node. Missing chunks/conflicting name =>409. Retry returns same Node.
 - `DELETE /uploads/{id}` cancels incomplete session and deletes chunks, 204. Must never delete a published file.
+- Client transport parts are temporary encrypted local state. Restart preserves existing parts; recovery archives retain completed content/manifests but omit pending part files. After restore, status excludes absent parts, so resume resends them. No key/manifest geometry migration is required. Old clients and copy jobs retain the whole-chunk route.
 - `GET|HEAD /nodes/{id}/content?download=1`: seekable decrypted bytes; `download=1` attachment, otherwise safe inline MIME allowlist (raster images, PDF, plain text, audio, video; never HTML/SVG). `Accept-Ranges: bytes`, Range support, ETag digest, `X-Content-SHA256`. Authentication mandatory. Nosniff. CSP sandbox for previews. Corrupted chunks fail before their plaintext is emitted.
 
 ## Operations
@@ -86,7 +92,7 @@ Completion requires an owner password and, for Telegram, successful account/chan
 
 ## Go integration
 
-Coordinator creates DB with `api.OpenDB(path) (*sql.DB,error)`. Storage `New(Config{DB,Key,Backend,ChunkSize})`. API `New(Config{DB,Storage,OwnerPassword,SecureCookies,StaticDir,Adapter,TelegramConfigured,StorageStatus}) (*Server,error)`; optional `StorageStatus func() domain.StorageStatus` supplies cached transport diagnostics. `Server.Handler() http.Handler`. API initializes its schema; Engine initializes storage schema, both on shared DB. `cmd/drive` handles shutdown, secrets and adapter startup.
+Coordinator creates DB with `api.OpenDB(path) (*sql.DB,error)`. Storage `New(Config{DB,Key,Backend,ChunkSize,StagingDir})`; production uses `<data>/upload-parts` and a blank staging directory disables the additive part API for legacy fixtures. API `New(Config{DB,Storage,OwnerPassword,SecureCookies,StaticDir,Adapter,TelegramConfigured,StorageStatus}) (*Server,error)`; optional `StorageStatus func() domain.StorageStatus` supplies cached transport diagnostics. `Server.Handler() http.Handler`. API initializes its schema; Engine initializes storage schema, both on shared DB. `cmd/drive` handles shutdown, secrets and adapter startup.
 
 `onboarding.New(Config{Token,SecureCookies,SetupTelegram,Commit,Completed})` isolates first-run HTTP state from normal API authentication. Injected Telegram callbacks publish QR data, await two-step input and honor cancellation. `Commit` durably activates private state; `Completed` signals listener shutdown only after the success response is flushed. `Close` cancels and joins active callbacks before normal storage can reuse the session.
 
@@ -102,4 +108,4 @@ All routes require owner authentication and same-origin mutation policy.
 
 `CopyJob = {id,status,total_entries,completed_entries,total_bytes,completed_bytes,error_code,created_at,updated_at,result_ids}`. Status: `queued|running|failed|cancelling|cancelled|complete`; error codes: `integrity_failed|source_missing|destination_conflict|storage_unavailable|cleanup_failed`. Fresh encrypted stages remain hidden until whole hierarchy commits atomically. User upload routes reject internal copy stages. Retry reuses verified chunks; cancellation never deletes originals.
 
-Main starts `Server.RunCopyJobs(ctx)` once and joins it before DB/adapter close. Supported API schema version 1; migrations transactional, future versions rejected. Storage port remains unchanged.
+Main starts `Server.RunCopyJobs(ctx)` once and joins it before DB/adapter close. Supported API schema version 1; migrations transactional, future versions rejected. Copy jobs continue using the existing whole-chunk storage methods.

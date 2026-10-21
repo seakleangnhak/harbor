@@ -1,15 +1,22 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDownToLine, ChevronLeft, ChevronRight, CircleAlert, Copy, FolderInput, Info, Loader2, Maximize2, Minimize2, Minus, Plus, RotateCcw, ShieldCheck, Star, X } from 'lucide-react'
 import { contentUrl } from '../api'
+import { previewMime } from '../media'
 import type { DriveNode } from '../types'
-import { errorMessage, fileKind, formatBytes } from '../utils'
+import { errorMessage, formatBytes } from '../utils'
 import { Button, IconButton, Modal } from './ui'
 import { FileIcon } from './FileIcon'
-import { clampImagePan, codeTokens, readPreviewText, textPreviewLimit } from './preview-utils'
+import { clampImagePan, codeTokens, mediaPreviewError, readPreviewText, textPreviewLimit } from './preview-utils'
 import type { NodeAction } from './FileBrowser'
 
 const PdfPreview = lazy(() => import('./PdfPreview'))
-const isSafeImage = (node: DriveNode) => /^image\/(png|jpeg|gif|webp|avif|bmp)$/.test(node.mime_type)
+
+function PreviewThumbnail({ node }: { node: DriveNode }) {
+  const [failed, setFailed] = useState(false)
+  return !failed && previewMime(node).startsWith('image/') && node.size <= 2 * 1024 * 1024
+    ? <img loading="lazy" decoding="async" src={contentUrl(node.id)} alt="" onError={() => setFailed(true)} />
+    : <FileIcon node={node} />
+}
 
 function ImagePreview({ node, onError }: { node: DriveNode; onError: () => void }) {
   const [zoom, setZoom] = useState(1)
@@ -33,9 +40,29 @@ function ImagePreview({ node, onError }: { node: DriveNode; onError: () => void 
       if (!drag.current || drag.current.id !== event.pointerId || !image.current) return
       setPan(clampImagePan(drag.current.startX + event.clientX - drag.current.x, drag.current.startY + event.clientY - drag.current.y, image.current.clientWidth, image.current.clientHeight, zoom))
     }} onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }}>
-      {loading && <div className="preview-message image-loading" role="status"><Loader2 className="spin" size={26} /><p>Opening image…</p></div>}
+      {loading && <div className="preview-message image-loading" role="status"><Loader2 className="spin" size={26} /><p>Opening image…</p><small className="preview-loading-note">Encrypted chunks are verified before display. Large files can take a moment.</small></div>}
       <img ref={image} className="image-preview image-canvas" src={contentUrl(node.id)} alt={node.name} draggable={false} style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, visibility: loading ? 'hidden' : 'visible' }} onLoad={() => setLoading(false)} onError={onError} />
     </div>
+  </div>
+}
+
+function MediaPreview({ node, mime, onError }: { node: DriveNode; mime: string; onError: (code?: number) => void }) {
+  const [waiting, setWaiting] = useState(true)
+  const [opened, setOpened] = useState(false)
+  const media = useRef<HTMLVideoElement | HTMLAudioElement>(null)
+  const video = mime.startsWith('video/')
+  const kind = video ? 'video' : 'audio'
+  const ready = () => { setOpened(true); setWaiting(false) }
+  const events = { onLoadedMetadata: ready, onCanPlay: ready, onPlaying: ready, onSeeked: ready, onWaiting: () => setWaiting(true), onSeeking: () => setWaiting(true), onPause: () => setWaiting(false) }
+  useEffect(() => {
+    const element = media.current
+    if (element && !element.hasAttribute('src')) { element.src = contentUrl(node.id); element.load() }
+    return () => { element?.pause(); element?.removeAttribute('src'); element?.load() }
+  }, [node.id])
+  return <div className="preview-media" aria-busy={waiting}>
+    {video ? <video ref={element => { media.current = element }} controls playsInline preload="metadata" src={contentUrl(node.id)} aria-label={node.name} {...events} onError={event => onError(event.currentTarget.error?.code)} />
+      : <div className="audio-preview"><FileIcon node={node} large /><strong>{node.name}</strong><audio ref={element => { media.current = element }} controls preload="metadata" src={contentUrl(node.id)} aria-label={node.name} {...events} onError={event => onError(event.currentTarget.error?.code)} /></div>}
+    {waiting && <div className="preview-message preview-media-loading" role="status"><Loader2 className="spin" size={26} /><p>{opened ? `Buffering ${kind}…` : `Opening ${kind}…`}</p><small className="preview-loading-note">Encrypted chunks are verified before playback. Large files can take a moment.</small></div>}
   </div>
 }
 
@@ -44,9 +71,10 @@ export function Preview({ node, close, next, previous, onDownload, files, onNavi
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [expanded, setExpanded] = useState(false)
-  const kind = node ? fileKind(node) : 'other'
-  const safeImage = !!node && isSafeImage(node)
-  const textPreview = !!node && (node.mime_type.startsWith('text/') || /\.(txt|md|json|csv|log|go|py|tsx?|jsx?|css|ya?ml|toml|ini|sh|sql|rs|java|c|cpp|h)$/i.test(node.name))
+  const [attempt, setAttempt] = useState(0)
+  const mime = node ? previewMime(node) : ''
+  const safeImage = mime.startsWith('image/')
+  const textPreview = !!node && !mime && (node.mime_type.trim().toLowerCase().startsWith('text/') || /\.(txt|md|json|csv|log|go|py|tsx?|jsx?|css|ya?ml|toml|ini|sh|sql|rs|java|c|cpp|h)$/i.test(node.name))
   const codePreview = !!node && /\.(json|go|py|tsx?|jsx?|css|ya?ml|toml|ini|sh|sql|rs|java|c|cpp|h)$/i.test(node.name)
   const tokens = useMemo(() => codePreview ? codeTokens(text) : [], [text, codePreview])
   const index = files?.findIndex(file => file.id === node?.id) ?? -1
@@ -62,12 +90,13 @@ export function Preview({ node, close, next, previous, onDownload, files, onNavi
         if (response.status === 401) window.dispatchEvent(new Event('harbor:unauthorized'))
         return readPreviewText(response, node.size, controller.signal)
       })
-      .then(setText).catch(error => { if (!controller.signal.aborted) setError(errorMessage(error)) }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
+      .then(value => { if (!controller.signal.aborted) setText(value) }).catch(error => { if (!controller.signal.aborted) setError(errorMessage(error)) }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [node?.id, textPreview])
+  }, [node?.id, node?.size, textPreview, attempt])
   useEffect(() => {
     if (!node) return
     const handler = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return
       const target = event.target
       if (target instanceof HTMLElement && (target.matches('input,textarea,select,video,audio') || target.isContentEditable || target.closest('.pdf-viewer'))) return
       if (event.key === 'ArrowRight' && next) { event.preventDefault(); next() }
@@ -78,8 +107,8 @@ export function Preview({ node, close, next, previous, onDownload, files, onNavi
   }, [node, next, previous])
   return <Modal open={!!node} onOpenChange={open => { if (!open) close() }} title={node?.name || 'File preview'} description={node ? `${formatBytes(node.size)} · ${node.mime_type || 'File'}` : undefined} className={`preview-modal${expanded ? ' preview-fullscreen' : ''}`}>
     {node && <><div className="preview-toolbar"><span className="preview-navigation">{index >= 0 && files ? `${index + 1} of ${files.length}` : 'File preview'}</span><div>{(next || previous) && <><IconButton label="Previous file" onClick={previous} disabled={!previous}><ChevronLeft size={17} /></IconButton><IconButton label="Next file" onClick={next} disabled={!next}><ChevronRight size={17} /></IconButton></>}<IconButton label={expanded ? 'Restore preview size' : 'Expand preview'} onClick={() => setExpanded(!expanded)}>{expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</IconButton></div></div>
-      <div className="preview-stage">{loading ? <div className="preview-message" role="status"><Loader2 className="spin" size={26} /><p>Opening preview…</p></div> : error ? <div className="preview-message" role="alert"><CircleAlert size={30} /><p>{error}</p><Button onClick={() => onDownload(node)}>Download file</Button></div> : safeImage ? <ImagePreview key={node.id} node={node} onError={() => setError('Image preview could not load. Download the original or reopen to retry.')} /> : node.mime_type === 'application/pdf' ? <Suspense fallback={<div className="preview-message" role="status"><Loader2 className="spin" size={26} /><p>Opening PDF…</p></div>}><PdfPreview key={node.id} id={node.id} name={node.name} /></Suspense> : textPreview ? <div className="text-preview-wrap">{node.size > textPreviewLimit && <p className="preview-limit">First 256 KiB shown. Download for the full file.</p>}<pre className={`text-preview${codePreview ? ' text-code' : ''}`} tabIndex={0} aria-label={codePreview ? 'Code preview' : 'Text preview'}><code>{codePreview ? tokens.map((token, index) => token.kind ? <span key={index} className={`token-${token.kind}`}>{token.text}</span> : token.text) : text || (node.size === 0 ? 'This file is empty.' : '')}</code></pre></div> : kind === 'video' ? <video key={node.id} controls playsInline preload="metadata" src={contentUrl(node.id)} aria-label={node.name} onError={() => setError('This browser cannot play the video. Download to open it in your preferred player.')} /> : kind === 'audio' ? <div className="audio-preview"><FileIcon node={node} large /><strong>{node.name}</strong><audio key={node.id} controls preload="metadata" src={contentUrl(node.id)} aria-label={node.name} onError={() => setError('This browser cannot play the audio format. Download the original to listen.')} /></div> : <div className="preview-message"><FileIcon node={node} large /><h3>Preview unavailable</h3><p>Download this format to open it in your preferred app.</p><Button variant="primary" onClick={() => onDownload(node)}><ArrowDownToLine size={16} />Download file</Button></div>}</div>
-      {safeImage && onNavigate && nearby.length > 1 && <nav className="preview-thumbnails" aria-label="Nearby files">{nearby.map(file => <button key={file.id} className={`preview-thumbnail${file.id === node.id ? ' active' : ''}`} aria-label={`Preview ${file.name}`} aria-current={file.id === node.id ? 'true' : undefined} title={file.name} onClick={() => onNavigate(file)}>{isSafeImage(file) && file.size <= 2 * 1024 * 1024 ? <img loading="lazy" src={contentUrl(file.id)} alt="" /> : <FileIcon node={file} />}</button>)}</nav>}
+      <div className="preview-stage">{loading ? <div className="preview-message" role="status"><Loader2 className="spin" size={26} /><p>Opening preview…</p><small className="preview-loading-note">Encrypted chunks are verified before display. Large files can take a moment.</small></div> : error ? <div className="preview-message" role="alert"><CircleAlert size={30} /><h3>Preview could not open</h3><p>{error}</p><div className="preview-error-actions"><Button variant="primary" onClick={() => { setError(''); setAttempt(value => value + 1) }}><RotateCcw size={15} />Retry preview</Button><Button onClick={() => onDownload(node)}><ArrowDownToLine size={15} />Download original</Button></div></div> : safeImage ? <ImagePreview key={`${node.id}:${attempt}`} node={node} onError={() => setError(mediaPreviewError(mime))} /> : mime === 'application/pdf' ? <Suspense fallback={<div className="preview-message" role="status"><Loader2 className="spin" size={26} /><p>Opening PDF…</p></div>}><PdfPreview key={node.id} id={node.id} name={node.name} /></Suspense> : textPreview ? <div className="text-preview-wrap">{node.size > textPreviewLimit && <p className="preview-limit">First 256 KiB shown. Download for the full file.</p>}<pre className={`text-preview${codePreview ? ' text-code' : ''}`} tabIndex={0} aria-label={codePreview ? 'Code preview' : 'Text preview'}><code>{codePreview ? tokens.map((token, index) => token.kind ? <span key={index} className={`token-${token.kind}`}>{token.text}</span> : token.text) : text || (node.size === 0 ? 'This file is empty.' : '')}</code></pre></div> : mime.startsWith('video/') || mime.startsWith('audio/') ? <MediaPreview key={`${node.id}:${attempt}`} node={node} mime={mime} onError={code => setError(mediaPreviewError(mime, code))} /> : <div className="preview-message"><FileIcon node={node} large /><h3>Preview unavailable</h3><p>Download this format to open it in your preferred app.</p><Button variant="primary" onClick={() => onDownload(node)}><ArrowDownToLine size={16} />Download file</Button></div>}</div>
+      {safeImage && onNavigate && nearby.length > 1 && <nav className="preview-thumbnails" aria-label="Nearby files">{nearby.map(file => <button key={file.id} className={`preview-thumbnail${file.id === node.id ? ' active' : ''}`} aria-label={`Preview ${file.name}`} aria-current={file.id === node.id ? 'true' : undefined} title={file.name} onClick={() => onNavigate(file)}><PreviewThumbnail node={file} /></button>)}</nav>}
       <div className="preview-footer"><span><ShieldCheck size={14} />Private, authenticated preview</span><Button onClick={() => onDownload(node)}><ArrowDownToLine size={15} />Download</Button></div>
     </>}
   </Modal>

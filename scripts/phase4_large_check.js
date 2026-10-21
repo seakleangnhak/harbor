@@ -36,7 +36,9 @@ async (page) => {
     await page.reload(); await page.getByRole('button', { name: folder.name, exact: true }).click()
     await page.getByRole('heading', { name: folder.name, exact: true }).waitFor()
   }
-  await page.setViewportSize({ width: 1440, height: 900 }); page.on('request', watch)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.evaluate(() => localStorage.setItem('harbor:thumbnails', 'false'))
+  page.on('request', watch)
   try {
     const loadStart = Date.now(); await enter(root)
     await page.getByRole('button', { name: 'List view', exact: true }).click()

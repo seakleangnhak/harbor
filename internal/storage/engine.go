@@ -22,6 +22,7 @@ import (
 type Engine struct {
 	db        *sql.DB
 	backend   BlobStore
+	staging   *LocalStore
 	aead      cipher.AEAD
 	chunkSize int64
 	slots     chan struct{}
@@ -75,6 +76,13 @@ CREATE TABLE IF NOT EXISTS storage_chunks (
  idx INTEGER NOT NULL CHECK(idx >= 0), size INTEGER NOT NULL CHECK(size > 0),
  sha256 TEXT NOT NULL, ref TEXT NOT NULL,
  PRIMARY KEY(upload_id, idx)
+);
+CREATE TABLE IF NOT EXISTS storage_parts (
+ upload_id TEXT NOT NULL REFERENCES storage_uploads(id) ON DELETE CASCADE,
+ chunk_idx INTEGER NOT NULL CHECK(chunk_idx >= 0),
+ part_idx INTEGER NOT NULL CHECK(part_idx >= 0),
+ size INTEGER NOT NULL CHECK(size > 0), sha256 TEXT NOT NULL, ref TEXT NOT NULL,
+ PRIMARY KEY(upload_id, chunk_idx, part_idx)
 );`)
 	if err != nil {
 		return nil, err
@@ -87,7 +95,14 @@ CREATE TABLE IF NOT EXISTS storage_chunks (
 	// active-buffer budget with uploads/finalization, including older manifests.
 	largestChunk := max(cfg.ChunkSize, min(persistedChunkSize, MaxChunkSize))
 	slots := min(4, int((256<<20)/largestChunk))
-	return &Engine{db: cfg.DB, backend: cfg.Backend, aead: aead, chunkSize: cfg.ChunkSize, slots: make(chan struct{}, slots), locks: make(map[string]*uploadLock)}, nil
+	e := &Engine{db: cfg.DB, backend: cfg.Backend, aead: aead, chunkSize: cfg.ChunkSize, slots: make(chan struct{}, slots), locks: make(map[string]*uploadLock)}
+	if cfg.StagingDir != "" {
+		e.staging, err = NewLocal(cfg.StagingDir)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return e, nil
 }
 
 func (e *Engine) lock(ctx context.Context, id string) (func(), error) {
@@ -184,7 +199,20 @@ func (e *Engine) Status(ctx context.Context, id string) (domain.Upload, error) {
 		u.ReceivedChunks = append(u.ReceivedChunks, idx)
 		u.ReceivedBytes += size
 	}
-	return u, rows.Err()
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return u, err
+	}
+	if e.staging != nil {
+		u.PartSize = min(TransportPartSize, u.ChunkSize)
+		if u.Status == "uploading" {
+			if err := e.stagedStatus(ctx, &u); err != nil {
+				return u, err
+			}
+		}
+	}
+	return u, nil
 }
 
 func (e *Engine) List(ctx context.Context) ([]domain.Upload, error) {
@@ -243,6 +271,17 @@ func (e *Engine) PutChunk(ctx context.Context, id string, index int, body io.Rea
 		return domain.Upload{}, err
 	}
 	defer unlock()
+	var staged int
+	if err := e.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM storage_parts WHERE upload_id=? AND chunk_idx=?`, id, index).Scan(&staged); err != nil {
+		return domain.Upload{}, err
+	}
+	if staged != 0 {
+		return domain.Upload{}, domain.ErrConflict
+	}
+	return e.putChunkLocked(ctx, id, index, body, expectedHash)
+}
+
+func (e *Engine) putChunkLocked(ctx context.Context, id string, index int, body io.Reader, expectedHash string) (domain.Upload, error) {
 	u, err := e.Status(ctx, id)
 	if err != nil {
 		return u, err
@@ -342,6 +381,9 @@ func (e *Engine) Complete(ctx context.Context, id string) (domain.Manifest, erro
 		return domain.Manifest{}, err
 	}
 	if u.Status == "complete" {
+		if err := e.clearStaged(ctx, id, nil); err != nil {
+			return domain.Manifest{}, err
+		}
 		return manifest(u), nil
 	}
 	if len(u.ReceivedChunks) != u.TotalChunks || u.ReceivedBytes != u.Size {
@@ -369,6 +411,9 @@ func (e *Engine) Complete(ctx context.Context, id string) (domain.Manifest, erro
 	digest := hex.EncodeToString(h.Sum(nil))
 	if u.SHA256 != "" && u.SHA256 != digest {
 		return domain.Manifest{}, domain.ErrIntegrity
+	}
+	if err := e.clearStaged(ctx, id, nil); err != nil {
+		return domain.Manifest{}, err
 	}
 	_, err = e.db.ExecContext(ctx, `UPDATE storage_uploads SET status='complete',sha256=? WHERE id=?`, digest, id)
 	if err != nil {
@@ -430,6 +475,9 @@ func (e *Engine) remove(ctx context.Context, id string, completed bool) error {
 		if err := e.backend.Delete(ctx, c.ref); err != nil {
 			return err
 		}
+	}
+	if err := e.clearStaged(ctx, id, nil); err != nil {
+		return err
 	}
 	tx, err := e.db.BeginTx(ctx, nil)
 	if err != nil {

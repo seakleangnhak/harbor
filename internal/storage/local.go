@@ -1,9 +1,11 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,6 +81,10 @@ func (s *LocalStore) Put(ctx context.Context, key string, ciphertext []byte) (st
 }
 
 func (s *LocalStore) Get(ctx context.Context, ref string) ([]byte, error) {
+	return s.getBounded(ctx, ref, maxCiphertextSize)
+}
+
+func (s *LocalStore) getBounded(ctx context.Context, ref string, limit int64) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -90,10 +96,22 @@ func (s *LocalStore) Get(ctx context.Context, ref string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Size() > maxCiphertextSize {
+	if !info.Mode().IsRegular() || info.Size() > limit {
 		return nil, domain.ErrIntegrity
 	}
-	return os.ReadFile(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	buffer := bytes.NewBuffer(make([]byte, 0, info.Size()+1+bytes.MinRead))
+	if _, err := buffer.ReadFrom(io.LimitReader(f, limit+1)); err != nil {
+		return nil, err
+	}
+	if int64(buffer.Len()) > limit {
+		return nil, domain.ErrIntegrity
+	}
+	return buffer.Bytes(), ctx.Err()
 }
 
 func (s *LocalStore) Delete(ctx context.Context, ref string) error {

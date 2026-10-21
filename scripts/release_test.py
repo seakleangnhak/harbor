@@ -62,6 +62,19 @@ class ReleaseTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 release.base_images(value)
 
+    def test_base_images_allow_only_previously_declared_stage_aliases(self):
+        pinned = 'example@sha256:' + 'a' * 64
+        source = ('FROM --platform=$BUILDPLATFORM ' + pinned + ' AS source\n'
+                  'FROM source AS checks\nFROM SOURCE AS server\n'
+                  'FROM ' + pinned + ' AS web\nFROM ' + pinned + '\n')
+        self.assertEqual(release.base_images(source), [pinned] * 3)
+        self.assertEqual(len(release.base_images((release.ROOT / 'Dockerfile').read_text())), 3)
+        for invalid in (source.replace('FROM source AS checks', 'FROM unknown AS checks'),
+                        'FROM source AS premature\n' + source,
+                        source.replace(pinned, 'example:latest', 1)):
+            with self.subTest(source=invalid), self.assertRaises(ValueError):
+                release.base_images(invalid)
+
     def test_untrusted_versions_fail_before_build_or_git_access(self):
         for version in ('v1.0.1', '01.0.1', '1.0.1-rc.1', '1.0.1;command'):
             with self.subTest(version=version), patch.object(sys, 'argv', ['release.py', '--ref', 'HEAD', '--version', version]), patch.object(release, 'run') as run, contextlib.redirect_stderr(io.StringIO()):

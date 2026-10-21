@@ -23,7 +23,7 @@ import (
 	"private-drive/internal/storage"
 )
 
-var buildVersion = "1.1.0"
+var buildVersion = "1.2.0"
 
 func main() {
 	if err := run(); err != nil {
@@ -169,7 +169,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("initialize storage: %w", err)
 	}
-	engine, err := storage.New(storage.Config{DB: db, Key: key, Backend: backend, ChunkSize: storage.DefaultChunkSize})
+	engine, err := storage.New(storage.Config{DB: db, Key: key, Backend: backend, ChunkSize: storage.DefaultChunkSize, StagingDir: filepath.Join(dataDir, "upload-parts")})
 	if err != nil {
 		return fmt.Errorf("initialize encrypted engine: %w", err)
 	}

@@ -40,6 +40,44 @@ def version(value):
     return value
 
 
+def verified_ci(commit):
+    repository = os.environ.get('GITHUB_REPOSITORY', '')
+    if (not isinstance(commit, str) or not re.fullmatch(r'[0-9a-f]{40}', commit)
+            or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+', repository)
+            or not os.environ.get('GH_TOKEN')):
+        raise QualificationError('Verified CI needs an exact commit, trusted repository and workflow token')
+    if run('git', 'rev-parse', 'HEAD').decode().strip() != commit:
+        raise QualificationError('CI proof must match the checked-out release commit')
+    query = urllib.parse.urlencode({'head_sha': commit, 'branch': 'main', 'event': 'push', 'per_page': 10})
+    response = run('gh', 'api', '--hostname', 'github.com',
+                   '-H', 'Accept: application/vnd.github+json',
+                   '-H', 'X-GitHub-Api-Version: 2022-11-28',
+                   'repos/' + repository + '/actions/workflows/ci.yml/runs?' + query, timeout=60)
+    try:
+        payload = json.loads(response)
+        runs = payload['workflow_runs']
+        if not isinstance(runs, list) or not 1 <= len(runs) <= 10:
+            raise ValueError
+        ordered = []
+        for candidate in runs:
+            if (candidate['head_sha'] != commit or candidate['head_branch'] != 'main'
+                    or candidate['event'] != 'push' or candidate['path'] != '.github/workflows/ci.yml'
+                    or candidate['head_repository']['full_name'].lower() != repository.lower()
+                    or type(candidate['id']) is not int or candidate['id'] <= 0
+                    or type(candidate['run_attempt']) is not int or candidate['run_attempt'] <= 0):
+                raise ValueError
+            created = time.strptime(candidate['created_at'], '%Y-%m-%dT%H:%M:%SZ')
+            ordered.append((created, candidate['id'], candidate['run_attempt'], candidate))
+        latest = max(ordered, key=lambda item: item[:3])[3]
+        # Do not filter status at the API: that could hide a newer queued/failed run.
+        if latest['status'] != 'completed' or latest['conclusion'] != 'success':
+            raise ValueError
+    except (AttributeError, KeyError, TypeError, ValueError):
+        raise QualificationError('Latest exact-commit main CI run is absent, untrusted or unsuccessful') from None
+    return {'commit': commit, 'run_id': latest['id'], 'run_attempt': latest['run_attempt'],
+            'run_url': 'https://github.com/' + repository + '/actions/runs/' + str(latest['id'])}
+
+
 def workflow_policy(ci, publish, verification=None):
     """Additional fail-closed guards for actionlint-validated release workflows."""
     # ponytail: fixed workflow shapes; use parsed policy when adding more release paths.
@@ -54,13 +92,17 @@ def workflow_policy(ci, publish, verification=None):
     if (re.search(r'\$\{\{[^}]*\bsecrets\b', ci) or re.search(r'\b(?:packages|contents|id-token|attestations):\s*write\b', ci)
             or re.search(r'\bpush: true\b', ci) or 'docker/login-action@' in ci):
         raise QualificationError('Ordinary CI must not receive publication credentials')
-    required = ('  pull_request:\n', 'branches: [main]', 'arch: [amd64, arm64]', 'push: false',
+    required = ('  pull_request:\n', 'branches: [main]', 'arch: [amd64, arm64]',
+                'runs-on: ${{ matrix.runner }}', 'runner: ubuntu-24.04-arm', 'push: false',
+                'go test -p 1 ./...',
+                'go test -p 1 -race ./...', 'go test -p 1 -race -tags telegram ./...',
+                'go vet -p 1 ./...', 'go vet -p 1 -tags telegram ./...',
                 'python3 scripts/ci_check.py reproducible', 'python3 scripts/ci_check.py docker-smoke')
     if not all(text in ci for text in required):
         raise QualificationError('CI must retain PR, main, reproducibility and both architecture checks')
     owner_gate = '    if: ${{ github.actor == github.repository_owner && github.triggering_actor == github.repository_owner }}\n'
     required = ("tags: ['v*']", '  workflow_dispatch:\n', 'python3 scripts/release_gate.py',
-                'needs: gate', 'uses: ./.github/workflows/ci.yml', 'needs: [gate, verify]',
+                'needs: gate', 'needs: [gate, verify]',
                 '  gate:\n' + owner_gate, '  publish:\n' + owner_gate,
                 '      packages: write\n', '${{ secrets.GITHUB_TOKEN }}',
                 'platforms: linux/amd64,linux/arm64', 'provenance: mode=min', 'sbom: generator=',
@@ -73,6 +115,20 @@ def workflow_policy(ci, publish, verification=None):
     if (publish.count('packages: write') != 1 or publish.count('python3 scripts/release_gate.py') != 2
             or re.search(r'\b(?:contents|id-token|attestations):\s*write\b', publish)):
         raise QualificationError('Publication permission and immediate pre-login gate required')
+    proof = re.search(r'^  verify:\n(.*?)(?=^  [A-Za-z_][A-Za-z0-9_-]*:|\Z)', publish, re.M | re.S)
+    required = ('    needs: gate\n', '      contents: read\n', '      actions: read\n',
+                '          ref: ${{ needs.gate.outputs.commit }}\n',
+                '          persist-credentials: false\n',
+                '          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n',
+                '          HARBOR_COMMIT: ${{ needs.gate.outputs.commit }}\n',
+                'python3 scripts/ci_check.py verified-ci --commit "$HARBOR_COMMIT"')
+    if (proof is None or not all(text in proof[1] for text in required)
+            or publish.count('actions: read') != 1 or 'uses: ./.github/workflows/ci.yml' in publish):
+        raise QualificationError('Publication requires read-only exact-commit successful main CI proof')
+    login = publish.find('uses: docker/login-action@')
+    if (login < 0 or publish.rfind('python3 scripts/release_gate.py') > login
+            or publish.find('python3 scripts/ci_check.py package-check\n') > login):
+        raise QualificationError('Release and package gates must precede registry authentication')
 
     if verification is not None:
         required = ('  workflow_dispatch:', '      release_tag:', '      digest:', '  packages: read',
@@ -190,9 +246,8 @@ def reproducible(target_version):
     with tempfile.TemporaryDirectory(prefix='harbor-reproducible-') as temporary:
         for attempt in ('first', 'second'):
             start = time.monotonic()
-            cache = Path(temporary) / attempt / 'cache'
-            cache.mkdir(parents=True)
-            environment = dict(os.environ, CGO_ENABLED='0', GOGC='40', GOCACHE=str(cache))
+            (Path(temporary) / attempt).mkdir()
+            environment = dict(os.environ, CGO_ENABLED='0', GOGC='40')
             for name, tags in (('drive', ['-tags', 'telegram']), ('harbor-recovery', [])):
                 destination = Path(temporary) / attempt / name
                 flags = '-s -w' + (' -X main.buildVersion=' + target_version if name == 'drive' else '')
@@ -202,8 +257,8 @@ def reproducible(target_version):
                     hashes[name].append(hashlib.file_digest(stream, 'sha256').hexdigest())
             seconds.append(round(time.monotonic() - start, 3))
     if any(values[0] != values[1] for values in hashes.values()):
-        raise QualificationError('Independent binary builds differ')
-    return {'version': target_version, 'fresh_cache_build_seconds': seconds,
+        raise QualificationError('Binary builds differ')
+    return {'version': target_version, 'cache_policy': 'shared', 'build_seconds': seconds,
             'reproducible': {name: {'sha256': values[0], 'identical_builds': 2} for name, values in hashes.items()}}
 
 
@@ -525,6 +580,8 @@ def main():
     commands = parser.add_subparsers(dest='command', required=True)
     commands.add_parser('workflows')
     commands.add_parser('package-check').add_argument('--required', action='store_true')
+    proof = commands.add_parser('verified-ci')
+    proof.add_argument('--commit', required=True)
     published = commands.add_parser('verify-published')
     published.add_argument('--tag', required=True)
     published.add_argument('--digest', required=True)
@@ -541,6 +598,8 @@ def main():
             result = workflows()
         elif args.command == 'package-check':
             result = package_check(args.required)
+        elif args.command == 'verified-ci':
+            result = verified_ci(args.commit)
         elif args.command == 'verify-published':
             result = verify_published(args.tag, args.digest)
         elif args.command == 'reproducible':

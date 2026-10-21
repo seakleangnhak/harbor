@@ -9,7 +9,7 @@ on:
       version:
         description: Stable runtime version supplied by the release gate
         required: false
-        default: '1.1.0'
+        default: '1.2.0'
         type: string
 
 permissions:
@@ -24,29 +24,10 @@ defaults:
     shell: bash
 
 jobs:
-  workflows:
-    name: Workflow and release policy
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: Install pinned workflow linter
-        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-      - name: Validate workflows, README, policy and release tooling
-        run: python3 scripts/ci_check.py workflows
-
   backend:
-    name: Go tests, race, vet and reproducibility
+    name: Go, workflow policy and reproducibility
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    env:
-      GOGC: '40'
-      GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,57 +35,101 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
-      - run: go mod verify
-      - run: go test -p 1 ./...
-      - run: go test -p 1 -tags telegram ./...
-      - run: go test -p 1 -race ./...
-      - run: go test -p 1 -race -tags telegram ./...
-      - run: go vet -p 1 ./...
-      - run: go vet -p 1 -tags telegram ./...
-      - name: Compare independent deterministic binary builds
+          cache-dependency-path: |
+            go.sum
+            Dockerfile
+      - name: Install pinned workflow linter
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: v0.38.1
+          driver-opts: image=moby/buildkit@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+      - name: Prepare pinned Go dependencies and test tools
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: backend-checks
+          load: true
+          push: false
+          provenance: false
+          tags: harbor:backend-checks
+          cache-from: type=gha,scope=harbor-backend
+          cache-to: type=gha,mode=max,scope=harbor-backend
+      - name: Verify policies and Go offline, then compare deterministic builds
         env:
-          HARBOR_VERSION: ${{ inputs.version || '1.1.0' }}
-        run: python3 scripts/ci_check.py reproducible --version "$HARBOR_VERSION"
+          HARBOR_VERSION: ${{ inputs.version || '1.2.0' }}
+        run: |
+          mkdir -p "$HOME/.cache/go-build"
+          docker run --rm --network none --read-only --user "$(id -u):$(id -g)" \
+            --memory 6g --memory-swap 6g --cpus 2 --pids-limit 512 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,mode=1777,size=4g \
+            --volume "$GITHUB_WORKSPACE:/src:ro" \
+            --volume "$(go env GOPATH)/bin/actionlint:/usr/local/bin/actionlint:ro" \
+            --volume "$HOME/.cache/go-build:/cache" \
+            --env HOME=/tmp --env GOCACHE=/cache --env GOGC=40 \
+            --env GOTOOLCHAIN=local --env GOPROXY=off --env GOSUMDB=off \
+            --env PYTHONDONTWRITEBYTECODE=1 --env HARBOR_VERSION \
+            harbor:backend-checks sh -ec '
+              python3 scripts/ci_check.py workflows
+              go mod verify
+              go test -p 1 ./...
+              go test -p 1 -race ./...
+              go test -p 1 -race -tags telegram ./...
+              go vet -p 1 ./...
+              go vet -p 1 -tags telegram ./...
+              python3 scripts/ci_check.py reproducible --version "$HARBOR_VERSION"
+            '
 
   frontend:
     name: Frontend tests, types and production assets
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: web
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci
-      - run: npm test
-      - run: npm run typecheck
-      - run: npm run build
+          version: v0.38.1
+          driver-opts: image=moby/buildkit@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+      - name: Typecheck and build production assets with locked dependencies
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: web
+          load: true
+          push: false
+          provenance: false
+          tags: harbor:frontend-checks
+          cache-from: type=gha,scope=harbor-frontend
+          cache-to: type=gha,mode=max,scope=harbor-frontend
+      - name: Run frontend tests offline
+        run: |
+          docker run --rm --network none --read-only --user 65532:65532 \
+            --memory 2g --memory-swap 2g --cpus 2 --pids-limit 256 \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /tmp:rw,nosuid,nodev,mode=1777,size=512m \
+            --env HOME=/tmp --env NPM_CONFIG_CACHE=/tmp/npm-cache \
+            harbor:frontend-checks npm test
 
   docker:
     name: Docker ${{ matrix.arch }} build and smoke
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        if: matrix.arch == 'arm64'
-        with:
-          image: docker.io/tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
-          platforms: arm64
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           version: v0.38.1
@@ -120,7 +145,7 @@ jobs:
           tags: harbor:ci-${{ matrix.arch }}
           build-args: |
             GO_TAGS=telegram
-            HARBOR_VERSION=${{ inputs.version || '1.1.0' }}
+            HARBOR_VERSION=${{ inputs.version || '1.2.0' }}
             SOURCE_DATE_EPOCH=0
           cache-from: type=gha,scope=harbor-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=harbor-${{ matrix.arch }}
@@ -128,5 +153,34 @@ jobs:
         env:
           HARBOR_IMAGE: harbor:ci-${{ matrix.arch }}
           HARBOR_PLATFORM: linux/${{ matrix.arch }}
-          HARBOR_VERSION: ${{ inputs.version || '1.1.0' }}
+          HARBOR_VERSION: ${{ inputs.version || '1.2.0' }}
         run: python3 scripts/ci_check.py docker-smoke --image "$HARBOR_IMAGE" --platform "$HARBOR_PLATFORM" --version "$HARBOR_VERSION"
+      - name: Prepare browser qualification tools for exact image
+        if: matrix.arch == 'amd64'
+        run: docker build --builder default -f scripts/Dockerfile.browser --build-arg HARBOR_IMAGE=harbor:ci-amd64 -t harbor-browser:ci .
+      - name: Verify Chromium and WebKit offline
+        if: matrix.arch == 'amd64'
+        run: |
+          mkdir -p output/browser
+          for engine in chromium webkit; do
+            container="harbor-browser-$engine"
+            docker run -d --name "$container" --network none --read-only \
+              --user 65532:65532 --memory 4g --memory-swap 4g --cpus 2 --pids-limit 512 \
+              --cap-drop ALL --security-opt no-new-privileges \
+              --tmpfs /scratch:rw,nosuid,nodev,mode=1777,size=2g \
+              --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777,size=512m \
+              --entrypoint sleep harbor-browser:ci 1800
+            result=0
+            docker exec "$container" node /checks/browser_check.cjs "$engine" all || result=$?
+            docker cp "$container:/scratch/." output/browser/
+            docker rm -f "$container"
+            if [ "$result" -ne 0 ]; then exit "$result"; fi
+          done
+      - name: Keep synthetic browser evidence
+        if: ${{ always() && matrix.arch == 'amd64' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-qualification
+          path: output/browser
+          if-no-files-found: ignore
+          retention-days: 7

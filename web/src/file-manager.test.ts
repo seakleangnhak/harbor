@@ -31,7 +31,18 @@ test('grid keyboard movement respects columns and directory boundaries', () => {
 })
 
 test('thumbnails permit bounded raster content only', () => {
-  const image = { mime_type: 'image/png', size: 8 * 1024 * 1024, trashed_at: null }
+  const image = { kind: 'file' as const, name: 'sample.png', mime_type: 'image/png', size: 8 * 1024 * 1024, trashed_at: null }
   assert.equal(canShowThumbnail(image), true)
-  for (const node of [{ ...image, size: image.size + 1 }, { ...image, size: 0 }, { ...image, mime_type: 'image/svg+xml' }, { ...image, trashed_at: '2026-10-21' }]) assert.equal(canShowThumbnail(node), false)
+  for (const node of [{ ...image, size: image.size + 1 }, { ...image, size: 0 }, { ...image, size: -1 }, { ...image, size: NaN }, { ...image, kind: 'folder' as const }, { ...image, mime_type: 'image/svg+xml' }, { ...image, mime_type: 'text/html' }, { ...image, mime_type: 'application/pdf' }, { ...image, mime_type: 'video/quicktime' }, { ...image, trashed_at: '2026-10-21' }]) assert.equal(canShowThumbnail(node), false)
+})
+
+test('thumbnails normalize native image formats and use names only for generic MIME metadata', () => {
+  const image = { kind: 'file' as const, name: 'sample.JPEG', mime_type: 'application/octet-stream', size: 1024, trashed_at: null }
+  assert.equal(canShowThumbnail(image), true)
+  assert.equal(canShowThumbnail({ ...image, mime_type: '' }), true)
+  assert.equal(canShowThumbnail({ ...image, mime_type: 'IMAGE/JPEG; charset=binary' }), true)
+  assert.equal(canShowThumbnail({ ...image, name: 'sample.HEIC', mime_type: 'image/heic' }), true)
+  assert.equal(canShowThumbnail({ ...image, name: 'sample.heif', mime_type: '' }), true)
+  for (const name of ['sample.svg', 'sample.html', 'sample.htm', 'sample.mov', 'sample.pdf', 'sample', 'sample.jpg.exe']) assert.equal(canShowThumbnail({ ...image, name }), false)
+  for (const mime_type of ['text/html', 'image/svg+xml', 'application/json', 'video/quicktime']) assert.equal(canShowThumbnail({ ...image, mime_type }), false)
 })

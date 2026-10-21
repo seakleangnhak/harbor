@@ -1,11 +1,11 @@
 services:
   drive:
-    image: ${HARBOR_IMAGE:-ghcr.io/seakleangnhak/harbor:1.1.0}
+    image: ${HARBOR_IMAGE:-ghcr.io/seakleangnhak/harbor:1.2.0}
     build:
       context: .
       args:
         GO_TAGS: ${GO_TAGS:-telegram}
-        HARBOR_VERSION: ${HARBOR_VERSION:-1.1.0}
+        HARBOR_VERSION: ${HARBOR_VERSION:-1.2.0}
     ports:
       - "127.0.0.1:${DRIVE_PORT:-8080}:8080"
     environment:

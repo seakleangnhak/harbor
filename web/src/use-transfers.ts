@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api, contentUrl } from './api'
-import { errorMessage, hashFile, managedDownloadLimit, missingChunks, readVerifiedDownload, transferTiming, validateName } from './utils'
-import { checkTransferCapacity, maxUploadChunkSize, readCopyRange, restoreTransfers, storedTransfers, transferDelay, type Transfer, type TransferSource } from './transfer-utils'
+import { errorMessage, hashFile, managedDownloadLimit, readVerifiedDownload, transferTiming, validateName } from './utils'
+import { checkTransferCapacity, readCopyRange, restoreTransfers, storedTransfers, transferDelay, uploadPartRange, validateUploadState, type Transfer, type TransferSource } from './transfer-utils'
 import type { DriveNode, Upload } from './types'
 
 export type { Transfer, TransferState } from './transfer-utils'
@@ -11,7 +11,7 @@ const readTransfers = (): Transfer[] => {
 }
 const fromUpload = (upload: Upload): Transfer => ({
   key: upload.id, id: upload.id, name: upload.name, size: upload.size, mime_type: upload.mime_type, parent_id: upload.parent_id,
-  sha256: upload.sha256, state: 'needs-file', received_bytes: upload.received_bytes, created_at: upload.created_at,
+  sha256: upload.sha256, state: 'needs-file', ...validateUploadState(upload, upload), created_at: upload.created_at,
 })
 const sourceOf = (node: DriveNode): TransferSource => ({ id: node.id, name: node.name, size: node.size, mime_type: node.mime_type, sha256: node.sha256 })
 
@@ -25,6 +25,7 @@ export function useTransfers(onComplete: () => void) {
   const controllers = useRef(new Map<string, AbortController>())
   const tasks = useRef(new Map<string, Promise<void>>())
   const mounted = useRef(true)
+  const saved = useRef('')
   const completeRef = useRef(onComplete)
   completeRef.current = onComplete
   const change = useCallback((fn: (items: Transfer[]) => Transfer[]) => {
@@ -41,7 +42,10 @@ export function useTransfers(onComplete: () => void) {
     return () => { mounted.current = false; for (const controller of controllers.current.values()) controller.abort() }
   }, [change])
   useEffect(() => {
-    try { localStorage.setItem(storageKey, JSON.stringify(storedTransfers(transfers))) } catch { /* Server upload sessions remain resumable when browser storage is full. */ }
+    try {
+      const serialized = JSON.stringify(storedTransfers(transfers))
+      if (serialized !== saved.current) { localStorage.setItem(storageKey, serialized); saved.current = serialized }
+    } catch { /* Server upload sessions remain resumable when browser storage is full. */ }
   }, [transfers])
 
   useEffect(() => {
@@ -77,19 +81,84 @@ export function useTransfers(onComplete: () => void) {
         }
         if (!digest || !/^[a-f0-9]{64}$/i.test(digest)) throw new Error('File integrity metadata is missing. Refresh your drive and retry.')
         update(transfer!.key, { sha256: digest, error: undefined })
-        const session = transfer!.id ? await api.upload(transfer!.id) : await api.createUpload({ name: transfer!.name, size: transfer!.size, mime_type: transfer!.mime_type, parent_id: transfer!.parent_id, sha256: digest }, signal)
+        let session = transfer!.id ? await api.upload(transfer!.id, signal) : await api.createUpload({ name: transfer!.name, size: transfer!.size, mime_type: transfer!.mime_type, parent_id: transfer!.parent_id, sha256: digest }, signal)
         update(transfer!.key, { id: session.id })
         signal.throwIfAborted()
-        if (session.size !== transfer!.size || !Number.isSafeInteger(session.chunk_size) || session.chunk_size < 1 || session.chunk_size > maxUploadChunkSize || session.total_chunks !== Math.ceil(session.size / session.chunk_size) || (session.sha256 && session.sha256.toLowerCase() !== digest.toLowerCase())) throw new Error('Upload metadata differs from this file. Cancel and start a new transfer.')
-        const started = performance.now(), startedBytes = session.received_bytes
+        const expected = { size: transfer!.size, sha256: digest }, initial = validateUploadState(session, expected)
+        const chunkSize = session.chunk_size, partSize = session.part_size, id = session.id
         let retries = 0
-        update(transfer!.key, { state: 'uploading', received_bytes: session.received_bytes, bytes_per_second: undefined, eta_seconds: undefined, retries })
-        for (const index of missingChunks(session.total_chunks, session.received_chunks || [])) {
+        const accept = (accepted: Upload) => {
+          signal.throwIfAborted()
+          if (accepted.id !== id || accepted.chunk_size !== chunkSize || accepted.part_size !== partSize) throw new Error('Upload metadata changed. Refresh and retry.')
+          const progress = validateUploadState(accepted, expected)
+          session = accepted
+          update(transfer!.key, { ...progress, sent_bytes: progress.received_bytes })
+          return accepted
+        }
+        const retry = async <T,>(operation: () => Promise<T>, state: 'uploading' | 'committing'): Promise<T> => {
+          for (let attempt = 0; ; attempt++) {
+            signal.throwIfAborted()
+            update(transfer!.key, { state })
+            try { return await operation() } catch (error) {
+              const acknowledged = validateUploadState(session, expected).received_bytes
+              update(transfer!.key, { sent_bytes: acknowledged, bytes_per_second: undefined, eta_seconds: undefined })
+              if (signal.aborted || attempt >= 2 || !(error instanceof TypeError || error instanceof ApiError && (error.status === 0 || error.status === 429 || error.status >= 500))) throw error
+              update(transfer!.key, { state: 'retrying', retries: ++retries })
+              await transferDelay(700 * 2 ** attempt, signal)
+            }
+          }
+        }
+        update(transfer!.key, { state: 'uploading', ...initial, sent_bytes: initial.received_bytes, bytes_per_second: undefined, eta_seconds: undefined, retries })
+        const committed = new Set(session.received_chunks), stagedChunk = session.staged_chunk
+        const indices = function* () {
+          if (stagedChunk !== undefined) yield stagedChunk
+          for (let index = 0; index < session.total_chunks; index++) if (!committed.has(index) && index !== stagedChunk) yield index
+        }
+        for (const index of indices()) {
           signal.throwIfAborted()
           const start = index * session.chunk_size, end = Math.min((index + 1) * session.chunk_size, transfer!.size) - 1
           let chunk = file?.slice(start, end + 1)
-          for (let attempt = 0; ; attempt++) {
-            try {
+          if (file && session.part_size) {
+            const partCount = Math.ceil((end - start + 1) / session.part_size)
+            for (let part = 0; part < partCount; part++) {
+              signal.throwIfAborted()
+              if (session.received_chunks.includes(index)) break
+              if (session.staged_chunk === index && session.staged_parts?.includes(part)) continue
+              const range = uploadPartRange(session, index, part), body = file.slice(range.start, range.end)
+              const partDigest = await hashFile(body, signal)
+              await retry(async () => {
+                const acknowledged = validateUploadState(session, expected).received_bytes, started = performance.now()
+                let lastProgress = -Infinity
+                const progress = (sent: number) => {
+                  if (signal.aborted) return
+                  const now = performance.now()
+                  if (sent !== body.size && now - lastProgress < 100) return
+                  lastProgress = now
+                  update(transfer!.key, { sent_bytes: acknowledged + sent, ...transferTiming(transfer!.size, acknowledged + sent, acknowledged, now - started) })
+                }
+                try {
+                  const accepted = await api.putPart(id, index, part, body, partDigest, signal, progress)
+                  accept(accepted)
+                  if (!accepted.received_chunks.includes(index) && (accepted.staged_chunk !== index || !accepted.staged_parts?.includes(part))) throw new Error('Upload part was not acknowledged. Refresh and retry.')
+                } catch (error) {
+                  if (error instanceof ApiError && error.status === 409) {
+                    const latest = accept(await api.upload(id, signal))
+                    if (latest.received_chunks.includes(index)) return
+                  }
+                  throw error
+                }
+              }, 'uploading')
+            }
+            if (!session.received_chunks.includes(index)) {
+              update(transfer!.key, { bytes_per_second: undefined, eta_seconds: undefined })
+              await retry(async () => {
+                const accepted = accept(await api.commitChunk(id, index, signal))
+                if (!accepted.received_chunks.includes(index)) throw new Error('Storage did not acknowledge this chunk. Retry to resume its saved parts.')
+              }, 'committing')
+            }
+          } else {
+            const started = performance.now(), startedBytes = session.received_bytes
+            await retry(async () => {
               if (!chunk && source) {
                 update(transfer!.key, { state: 'downloading' })
                 const response = await fetch(contentUrl(source.id), { credentials: 'same-origin', headers: { Range: `bytes=${start}-${end}` }, signal })
@@ -100,24 +169,19 @@ export function useTransfers(onComplete: () => void) {
               if (!chunk) throw new Error('Select the original file to resume.')
               const chunkDigest = await hashFile(chunk, signal)
               update(transfer!.key, { state: 'uploading' })
-              const accepted = await api.putChunk(session.id, index, chunk, chunkDigest, signal)
-              update(transfer!.key, { received_bytes: accepted.received_bytes, ...transferTiming(transfer!.size, accepted.received_bytes, startedBytes, performance.now() - started) })
-              break
-            } catch (error) {
-              if (signal.aborted || attempt >= 2 || (error instanceof ApiError && error.status < 500 && error.status !== 429)) throw error
-              update(transfer!.key, { state: 'retrying', retries: ++retries })
-              await transferDelay(700 * 2 ** attempt, signal)
-            }
+              const accepted = accept(await api.putChunk(session.id, index, chunk, chunkDigest, signal))
+              update(transfer!.key, transferTiming(transfer!.size, accepted.received_bytes, startedBytes, performance.now() - started))
+            }, 'uploading')
           }
         }
         signal.throwIfAborted()
         update(transfer!.key, { state: 'verifying', bytes_per_second: undefined, eta_seconds: undefined })
         await api.completeUpload(session.id, signal)
-        update(transfer!.key, { state: 'complete', received_bytes: transfer!.size, error: undefined })
+        update(transfer!.key, { state: 'complete', received_bytes: transfer!.size, stored_bytes: transfer!.size, sent_bytes: transfer!.size, error: undefined })
         files.current.delete(transfer!.key)
         completeRef.current()
       } catch (error) {
-        if (!cancelling.current.has(transfer!.key)) update(transfer!.key, { state: signal.aborted ? resumeRequested.current.delete(transfer!.key) ? 'queued' : 'paused' : 'error', error: signal.aborted ? undefined : error instanceof TypeError ? 'Transfer interrupted. Check your connection and retry.' : errorMessage(error), bytes_per_second: undefined, eta_seconds: undefined })
+        if (!cancelling.current.has(transfer!.key)) update(transfer!.key, { state: signal.aborted ? resumeRequested.current.delete(transfer!.key) ? 'queued' : 'paused' : 'error', sent_bytes: undefined, error: signal.aborted ? undefined : error instanceof TypeError ? 'Transfer interrupted. Check your connection and retry.' : errorMessage(error), bytes_per_second: undefined, eta_seconds: undefined })
       } finally {
         controllers.current.delete(transfer!.key)
         tasks.current.delete(transfer!.key)
@@ -151,7 +215,7 @@ export function useTransfers(onComplete: () => void) {
     if (current.current.find(item => item.key === key)?.state === 'verifying' || cancelling.current.has(key)) return
     resumeRequested.current.delete(key)
     controllers.current.get(key)?.abort()
-    update(key, { state: 'paused', bytes_per_second: undefined, eta_seconds: undefined })
+    update(key, { state: 'paused', sent_bytes: undefined, bytes_per_second: undefined, eta_seconds: undefined })
   }
   const resume = (key: string, file?: File) => {
     const transfer = current.current.find(item => item.key === key)
@@ -172,7 +236,7 @@ export function useTransfers(onComplete: () => void) {
     cancelling.current.add(key)
     resumeRequested.current.delete(key)
     controllers.current.get(key)?.abort()
-    update(key, { state: 'paused', bytes_per_second: undefined, eta_seconds: undefined })
+    update(key, { state: 'paused', sent_bytes: undefined, bytes_per_second: undefined, eta_seconds: undefined })
     try {
       await tasks.current.get(key)
       const latest = current.current.find(transfer => transfer.key === key)

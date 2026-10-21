@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist'
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import type { TextContent } from 'pdfjs-dist/types/src/display/api'
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { ChevronLeft, ChevronRight, CircleAlert, Loader2, Minus, Plus } from 'lucide-react'
 import { contentUrl } from '../api'
 import { errorMessage } from '../utils'
 import { IconButton } from './ui'
+import { textPreviewLimit } from './preview-utils'
 
 GlobalWorkerOptions.workerSrc = workerUrl
 const fontAssets = import.meta.glob<string>('../../node_modules/pdfjs-dist/standard_fonts/*.{pfb,ttf}', { eager: true, query: '?url&no-inline', import: 'default' })
@@ -54,6 +56,7 @@ export default function PdfPreview({ id, name }: { id: string; name: string }) {
     if (!document) return
     let cancelled = false
     let render: RenderTask | undefined
+    let textReader: ReadableStreamDefaultReader<TextContent> | undefined
     setLoading(true); setError(''); setPageText('')
     document.getPage(pageNumber).then(async page => {
       if (cancelled || !canvasRef.current) return
@@ -67,11 +70,34 @@ export default function PdfPreview({ id, name }: { id: string; name: string }) {
       canvas.style.width = `${viewport.width}px`; canvas.style.height = `${viewport.height}px`
       render = page.render({ canvas, viewport, transform: [ratio, 0, 0, ratio, 0, 0] })
       await render.promise
-      if (!cancelled) setLoading(false)
-      const text = await page.getTextContent()
-      if (!cancelled) setPageText(text.items.map(item => 'str' in item ? item.str : '').join(' '))
+      if (cancelled) return
+      setLoading(false)
+      // ponytail: cap accessible page text at 256 Ki characters; original PDF retains full text.
+      const reader: ReadableStreamDefaultReader<TextContent> = page.streamTextContent().getReader()
+      textReader = reader
+      try {
+        let text = ''
+        while (!cancelled && text.length < textPreviewLimit) {
+          const { done, value } = await reader.read()
+          if (done || cancelled) break
+          for (const item of value.items) {
+            if ('str' in item) {
+              if (text) text += ' '
+              text += item.str.slice(0, textPreviewLimit - text.length)
+            }
+            if (text.length >= textPreviewLimit) break
+          }
+        }
+        if (!cancelled) setPageText(text)
+      } catch {
+        if (!cancelled) setPageText('Page text unavailable. Download the original PDF to read its text.')
+      } finally {
+        await reader.cancel().catch(() => {})
+        reader.releaseLock()
+        textReader = undefined
+      }
     }).catch(error => { if (!cancelled) { setError(errorMessage(error)); setLoading(false) } })
-    return () => { cancelled = true; render?.cancel() }
+    return () => { cancelled = true; render?.cancel(); void textReader?.cancel().catch(() => {}) }
   }, [document, pageNumber, width, height, zoom, fit])
 
   useEffect(() => setPageDraft(String(pageNumber)), [pageNumber])

@@ -1,5 +1,86 @@
 # Progress
 
+## v1.2.0 — CI/CD simplification and release qualification in progress
+
+Owner authorized sanitized-source push, a new version and GHCR image publication. Target version 1.2.0 includes pending preview, staged client transport, account/settings and minimal-environment changes. Original private repository/runtime data and historical tags remain preserved. Existing source repository is private; owner API confirms the existing public package belongs to this repository and matches the pinned identity. No visibility change or remote application deployment.
+
+Hosted baseline CI took 11m47s; backend cold binary recompilation consumed 4m13s. New pipeline removes redundant frontend/tagged-test work, compares two binary outputs with shared build cache and requires successful exact-commit main CI before publication. Security/package/tag gates remain. Fresh hosted Go/frontend/image/browser checks must pass before tagging; local Docker remains unavailable. Scoped sanitized history and source Gitleaks scans found no leaks. [Release ledger](RELEASE_1.2.0.md).
+
+## Account settings visual refinement — source complete, qualification PARTIAL
+
+Source audit found a crowded settings flow, weak profile-save feedback and password errors without reliable field focus. Settings now separates Account, Storage and Recovery using native button navigation and named content regions. Desktop uses compact side navigation; mobile uses horizontal navigation, 44px minimum form controls and a bounded scrolling panel with a persistent footer. Existing evergreen/stone theme tokens supply light/dark colors.
+
+Account includes owner identity, display-name count, explicit unsaved/saved states and cancel. Password editing starts collapsed, clears secrets when cancelled or leaving Account, reports actual UTF-8 length/matching requirements and focuses invalid fields. Busy forms guard navigation and sign-out. Storage includes real loading/error/retry states; recovery uses a keyboard-operable disclosure for existing server instructions. Modal focus restoration includes the mobile navigation launcher. Existing account API and session-revocation behavior remain intact.
+
+**PASS (static only):** fresh `git diff --check` and `node --check scripts/account_check.js`; independent final source review found no further actionable issue. Browser harness now covers six widths, both themes, 32 planned screenshots/axe contexts, navigation/disclosure keyboard behavior, focus trapping/restoration, validation focus, secret clearing and account regressions. These checks are prepared, not executed.
+
+**NOT TESTED:** rendered visual quality, screenshots, browser/axe checks, frontend tests/typecheck/build and account backend/recovery execution. Docker Desktop remains unavailable with a missing daemon socket. Project isolation rules prohibit moving target execution onto the host. Earlier preview/transport evidence does not qualify these changes. Original repository remains clean; earlier export changes are preserved. No dependencies, real-account changes, commits, publication or deployment.
+
+## Owner account settings — implementation complete, qualification PARTIAL
+
+Added Profile and Password sections to Settings. Saved Unicode display names update the sidebar/topbar initials through the session cache. Password forms verify current/new/confirmation inputs, use masked fields with explicit reveal buttons, show UTF-8 byte guidance, and clear secrets after success. A successful change returns to sign-in with a confirmation notice. Wrong-current errors preserve the authenticated workspace; expired/revoked sessions clear private query caches, including background session-check failures.
+
+Authenticated same-origin profile/password routes use bounded input validation. An additive singleton profile preserves legacy owner data. Password changes serialize against login issuance, save only a bcrypt hash, and atomically revoke every web session with the recovery timestamp. Existing initialization secrets cannot reset the changed hash on restart. Complete recovery omits obsolete automatically discovered initialization passwords after a change; explicit recovery password sources remain verified. Encrypted content keys, manifests and Telegram authorizations are unchanged by these handlers.
+
+Backend tests were added for migration, name/password bounds, authentication/origin rejection, throttle, session revocation, restart, transaction rollback and concurrent login/change requests. Recovery tests cover actual account changes, encrypted backup/verify/fresh restore, both legacy and browser setup layouts, current/old-password login, profile preservation, content equality, two restarts, explicit stale-password rejection and older archives without profile metadata. Frontend tests cover names/initials and account request/error contracts. `scripts/account_check.js` guards against initialized installations and prepares fresh-fixture browser, theme/mobile/screenshot and optional axe checks.
+
+**PASS (static only):** `git diff --check`, `gofmt -l` for the changed Go files, and `node --check scripts/account_check.js`. Independent source review found no blocking account/recovery defect. Original development worktree remains clean; earlier preview/transport changes are preserved.
+
+**NOT TESTED for these account changes:** Go tests/race/vet, frontend tests/typecheck/build, browser interactions/screenshots/axe, Docker image and live Telegram regressions. Docker Desktop remains unavailable (missing daemon socket) after the prior disk-space incident. Existing project rules require isolated no-network containers; target execution was not moved onto the host. Earlier successful preview/transport runs do not qualify this newer source. No account credentials or private data were accessed; nothing was committed, published or deployed.
+
+Next qualification: restore Docker Desktop, then run isolated `go test -p 1 ./...`, `go test -p 1 -race ./...`, `go vet -p 1 ./...`, frontend `npm test`, `npm run typecheck`, `npm run build`, and `scripts/account_check.js` in Chromium/WebKit with a new disposable local-adapter setup. Build/test the resulting image before releasing account settings.
+
+## Client transport parts — local qualification PASS
+
+Verified 2026-10-22. Existing 100 MiB storage geometry, ciphertext format, keys and manifests remain intact. Browser file uploads now send serial 4 MiB parts with individual SHA-256 acknowledgements, encrypted private staging and an explicit storage-chunk commit. Per-upload locking permits one pending storage chunk, up to 25 parts. A remote commit failure retains local parts; missing/corrupt parts can be repaired using the original file. Stored chunks remain idempotent across a stage-cleanup failure/restart. Existing whole-chunk clients and copy jobs remain supported.
+
+Transfer UI separates transient sent bytes, durable server acceptance and adapter-committed bytes. Native XHR progress is throttled for rendering; speed/ETA describe sending to Harbor, while saving and final integrity verification have separate states. Part and commit retries are independently bounded to two retries. Browser pause/reload/reselection resumes accepted parts; progress remains below 100% until verified publication. Transient sent bytes never enter durable browser state.
+
+| Verification | Result |
+| --- | --- |
+| `go test -p 1 ./...`, `go test -p 1 -race ./...`, `go vet -p 1 ./...` | PASS in isolated no-network containers; Telegram-tagged API/storage tests also PASS |
+| `npm test`, `npm run typecheck`, `npm run build` | PASS; 38 frontend tests; no new dependencies |
+| New storage/API transport tests | PASS; actual 100 MiB aggregation plus tail, exact bounds/digests, authentication/origin/copy-stage guards, duplicate/concurrent retries, cancel, missing/corrupt stages, malformed metadata and remote-commit/cleanup crash window |
+| Encrypted `Backup`/`Verify`/fresh `Restore` with pending parts | PASS, including focused race test; archive-only key/config/metadata recovery, committed checksums, absent staged files resent from original and restored DB restart |
+| `scripts/transport_check.js`, Chromium and WebKit | PASS; 105,906,299-byte fixture, two storage chunks, 28 client requests each at most 4,194,304 bytes; one part-network failure, pause/reload/reselection and one HTTP 503 commit retry; acknowledged parts retained; final SHA-256 `6029196e8fead8bd9005dd9f756b85228a075503dada2f5de6dbc7ab6e9f6994` |
+| Transfer visual/accessibility checks | PASS; reviewed desktop/mobile saving views, four axe audits with zero violations and zero uncaught browser exceptions; real native upload progress events in both engines |
+| Fresh preview and 1,000-folder regressions | PASS in both production engines; another 32 axe audits, zero exceptions/overflow; PNG/JPEG/PDF/text/audio/WebM checksums, seeking/HTTP 206, thumbnail limits and virtualized listing preserved; MOV decoding remains browser dependent |
+| Final ARM64 production Dockerfile and `scripts/ci_check.py docker-smoke --image harbor-transport:local --platform linux/arm64 --version 1.1.0` | PASS; encrypted legacy multipart checksum, onboarding/auth/CSRF, Range, resume/restart/container recreation, non-root permissions/health and clean shutdown |
+
+Local image index: `sha256:eb32542c8c6f3718f2ae33e2833dfb01cdbb2fab7dfee97d104f8921a1a3c88a`. Evidence remains ignored under `output/transport-check/`; successful transfer runs initially recorded `chromium/transport-4ntVzn` and `webkit/transport-jFAoxg`, preview runs `preview-chromium/preview-zMHJAp` and `preview-webkit/preview-yGVa6p`. Browser body inspection uses actual intercepted request bytes in Chromium; WebKit requires inspecting the actual Blob passed to native XHR because Playwright omits its POST body. The server and complete download independently verify digests in both engines.
+
+Limits: pending local disk usage is up to one 100 MiB chunk per upload, plus encryption overhead. Recovery archives deliberately omit uncommitted part files; the original file is required to resend them. Individual browser file copies still use whole storage chunks to avoid repeated remote-range reads. Crash-created unreferenced encrypted blobs remain a conservative/manual cleanup ceiling. This task used generated local-adapter fixtures; new live Telegram performance, physical Safari/iOS and remote deployment are NOT TESTED. No private runtime files, original repository, release, push or deployment configuration changed; source/local image remain unpublished.
+
+Extra process-level staged-part restart qualification is **NOT TESTED**: host ENOSPC was followed by Docker Desktop becoming unavailable. Earlier engine/DB restarts, encrypted recovery, browser reload and Docker legacy restart tests passed before this outage. Only generated test fixtures/dependency copies were cleaned, freeing about 2 GiB; results/screenshots retained. Docker CLI/native startup recovery did not succeed; Docker Desktop needs owner attention before further container checks. No Docker data reset, volume deletion, global prune or private-state cleanup was attempted.
+
+## Preview repair — local qualification PASS
+
+Image thumbnails now default on, retain their hide/show preference and load near the viewport with at most two original-image requests. Preview routing normalizes MIME metadata and recognizes safe filename extensions for missing/generic MIME; existing files and metadata stay unchanged. Image/text/native media provide retry states, loading feedback and original-download fallbacks. HEIC/HEIF and MOV decoding remains browser/codec dependent; no transcoder or dependency added. HTML/XML/SVG content remains attachment-only.
+
+PDF preview now uses PDF.js's bundled compatibility build and matching worker. This fixes missing `Map.getOrInsertComputed` in Chromium. Cancellable, bounded text-stream reading fixes WebKit's missing stream async iterator; optional text-extraction failure preserves the rendered page. Native audio/video survive React StrictMode effect replay and retain their own keyboard controls. The development API proxy preserves Host so supported login passes existing same-origin checks.
+
+| Verification | Result |
+| --- | --- |
+| `go test -p 1 ./...`, `go test -p 1 -race ./...`, `go vet -p 1 ./...` | PASS |
+| Telegram-tagged API/storage tests with production `CGO_ENABLED=0 GOFLAGS="-buildvcs=false -trimpath"` | PASS; initial uncached compilation exceeded the 2 GiB sandbox limit; retry with production flags passed |
+| `npm test`, `npm run typecheck`, production Dockerfile build | PASS; 32 frontend tests, linux/arm64 image |
+| `scripts/preview_check.js`: Chromium production, WebKit production, Chromium development StrictMode | PASS; 16 settled-view axe audits per run, 48 total with zero violations and zero uncaught exceptions |
+| Generated PNG/JPEG/PDF/text/audio and WebM through encrypted local storage | PASS; SHA-256 roundtrips, PDF canvas/text/zoom/fit, image zoom/pan/fullscreen, injected transport failure/retry, WebM decoded frame/seek and HTTP 206 |
+| Actual generated H.264 MOV frame/seek | PASS in WebKit; UNSUPPORTED in Linux Chromium, actionable fallback verified |
+| Thumbnail queue and responsive views | PASS; peak two original-image requests, persistent opt-out, no eager video GETs; 320/390/768/1024/1440px samples, light/dark desktop/mobile, no measured horizontal overflow |
+| 1,000-folder browser checks | PASS in both production engines; 17 list rows, 50/80/50 grid cards, no overlaps, keyboard End and selected drag; explicit thumbnail opt-out makes zero content GETs |
+| `python3 scripts/ci_check.py docker-smoke --image harbor-preview:local --platform linux/arm64 --version 1.1.0` | PASS; 104,923,157-byte encrypted multipart checksum, auth/CSRF, Range, onboarding/lockout, legacy init, resume/restart/recreation, non-root permissions/health/shutdown |
+
+Browser artifacts remain ignored under `output/preview-check/`: `qa-webkit-production/preview-NwfPMK`, `qa-chromium-production/preview-XED201`, `qa-chromium-development/preview-SNbd7q`. Screenshots precede axe with finite transitions disabled, so audits inspect settled rendered states; early WebKit scans during transitions produced transient contrast failures. No theme CSS workaround or audit waiver retained.
+
+Reviewed generated-fixture screenshots: [desktop light](screenshots/preview-grid-desktop-light.png), [desktop dark](screenshots/preview-grid-desktop-dark.png), [image](screenshots/preview-image-desktop-light.png), [PDF](screenshots/preview-pdf-desktop-light.png), [mobile grid](screenshots/preview-grid-mobile-dark.png), [mobile image](screenshots/preview-image-mobile-dark.png). PNG text/EXIF metadata absent.
+
+Limits: HEIC failure guidance uses an intentionally invalid synthetic fixture, not successful HEIC decoding. Native codecs remain browser/device dependent; physical Safari/iOS and live Telegram operations are NOT TESTED in this task. Application and test execution used isolated synthetic local adapters with no external network access. Dependency-fetching image builds received no runtime secrets. No private runtime data, original installation, release, remote repository or deployment changed. Current source changes and local image remain unpublished.
+
+## Minimal first-run environment — PASS
+
+`.env.example` now requires only a generated setup token, with commented HTTPS and Compose-port overrides. Owner password and Telegram details stay in browser onboarding; README retains the full configuration reference. Clean-environment Compose validation passed for localhost defaults, synthetic token/HTTPS/port overrides and the Dokploy template. No runtime code, private configuration, volumes or deployment changed.
+
 ## v1.1.0 release — artifact qualification and publication PASS
 
 Owner authorized sanitized-source cleanup, push, new release and GHCR image. Release agent updated qualification geometry and exact-image web-onboarding smoke; independent onboarding/storage review found no release blocker or justified runtime rewrite. Coordinator aligned version defaults and installation docs. Existing public GHCR visibility is pinned explicitly; repository visibility stays private. No original installation/session/data changes.

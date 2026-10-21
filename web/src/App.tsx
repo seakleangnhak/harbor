@@ -29,23 +29,33 @@ function preferences(listing: Listing) {
 
 export default function App() {
   const queryClient = useQueryClient()
+  const [loginNotice, setLoginNotice] = useState('')
   const setup = useQuery({ queryKey: ['setup'], queryFn: ({ signal }) => setupStatus(signal), staleTime: Infinity, retry: 3 })
   const session = useQuery({ queryKey: ['session'], queryFn: api.session, retry: false, enabled: setup.data?.required === false })
+  const clearSession = useCallback((notice?: string) => {
+    if (notice !== undefined) setLoginNotice(notice)
+    void queryClient.cancelQueries()
+    queryClient.setQueryData(['session'], null)
+    queryClient.removeQueries({ predicate: query => !['session', 'setup'].includes(String(query.queryKey[0])) })
+  }, [queryClient])
   useEffect(() => {
-    const unauthorized = () => { queryClient.setQueryData(['session'], null) }
+    const unauthorized = () => clearSession()
     window.addEventListener('harbor:unauthorized', unauthorized)
     return () => window.removeEventListener('harbor:unauthorized', unauthorized)
-  }, [queryClient])
+  }, [clearSession])
+  useEffect(() => {
+    if (session.error instanceof ApiError && session.error.status === 401) clearSession()
+  }, [session.error, clearSession])
   if (setup.isPending) return <div className="app-loading"><span className="loading-brand">H</span><p>Opening your space…</p></div>
   if (setup.error) return <div className="connection-error"><CircleAlert size={30} /><h1>Harbor is out of reach</h1><p>{errorMessage(setup.error)}</p><Button onClick={() => { void setup.refetch() }}>Try again</Button></div>
   if (setup.data?.required) return <Suspense fallback={<div className="app-loading">Preparing setup…</div>}><Onboarding onComplete={() => { void queryClient.invalidateQueries({ queryKey: ['setup'] }) }} /></Suspense>
   if (session.isPending) return <div className="app-loading"><span className="loading-brand">H</span><p>Opening your space…</p></div>
   if (session.error && !(session.error instanceof ApiError && session.error.status === 401)) return <div className="connection-error"><CircleAlert size={30} /><h1>Harbor is out of reach</h1><p>{errorMessage(session.error)}</p><Button onClick={() => { void session.refetch() }}>Try again</Button></div>
-  if (!session.data) return <Login onLogin={() => { void queryClient.invalidateQueries({ queryKey: ['session'] }) }} />
-  return <Workspace logout={async () => { await api.logout(); queryClient.setQueryData(['session'], null); queryClient.removeQueries({ predicate: query => query.queryKey[0] !== 'session' }) }} />
+  if (!session.data || session.error instanceof ApiError && session.error.status === 401) return <Login notice={loginNotice} onLogin={() => { setLoginNotice(''); void queryClient.invalidateQueries({ queryKey: ['session'] }) }} />
+  return <Workspace owner={session.data.owner} passwordChanged={() => clearSession('Password changed. Sign in with your new password.')} logout={async () => { await api.logout(); clearSession('') }} />
 }
 
-function Workspace({ logout }: { logout: () => Promise<void> }) {
+function Workspace({ logout, owner, passwordChanged }: { logout: () => Promise<void>; owner: string; passwordChanged: () => void }) {
   const queryClient = useQueryClient()
   const [listing, setListing] = useState<Listing>(() => ({ ...initialListing, sort: preferences(initialListing).sort, direction: preferences(initialListing).direction }))
   const [search, setSearch] = useState('')
@@ -241,8 +251,8 @@ function Workspace({ logout }: { logout: () => Promise<void> }) {
   const previewIndex = previewFiles.findIndex(node => node.id === preview?.id)
 
   return <div className={`app-shell ${collapsed ? 'sidebar-collapsed' : ''}`} onDragEnter={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); dragDepth.current++; setDragging(true) } }} onDragLeave={event => { event.preventDefault(); if (--dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false) } }} onDragOver={event => { if (event.dataTransfer.types.includes('Files')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy' } }} onDrop={onDrop}>
-    <a className="skip-link" href="#main-content">Skip to files</a><Sidebar view={listing.view} navigate={navigateView} upload={upload} settings={() => setSettings(true)} help={() => setHelp(true)} diagnostics={diagnostics.data} connectionError={diagnostics.isError} dark={dark} toggleTheme={() => setDark(!dark)} mobileOpen={mobileOpen} closeMobile={() => setMobileOpen(false)} collapsed={collapsed} toggleCollapsed={() => setCollapsed(!collapsed)} />
-    <div className="workspace"><Topbar query={search} setQuery={setSearch} onMobileMenu={() => setMobileOpen(true)} openTransfers={() => setTransfersOpen(!transfersOpen)} activeTransfers={activeTransfers} openHelp={() => setHelp(true)} searchRef={searchInput} openCommands={() => setCommands(true)} />
+    <a className="skip-link" href="#main-content">Skip to files</a><Sidebar view={listing.view} navigate={navigateView} upload={upload} settings={() => setSettings(true)} help={() => setHelp(true)} diagnostics={diagnostics.data} connectionError={diagnostics.isError} dark={dark} toggleTheme={() => setDark(!dark)} mobileOpen={mobileOpen} closeMobile={() => setMobileOpen(false)} owner={owner} collapsed={collapsed} toggleCollapsed={() => setCollapsed(!collapsed)} />
+    <div className="workspace"><Topbar query={search} setQuery={setSearch} onMobileMenu={() => setMobileOpen(true)} openTransfers={() => setTransfersOpen(!transfersOpen)} activeTransfers={activeTransfers} openHelp={() => setHelp(true)} searchRef={searchInput} openCommands={() => setCommands(true)} owner={owner} openAccount={() => setSettings(true)} />
       <div className="workspace-body"><main id="main-content" className="main-content"><FileToolbar listing={listing} setListing={updateListing} breadcrumbs={nodeQuery.data?.breadcrumbs || [{ id: '', name: 'My drive' }]} navigateFolder={navigateFolder} grid={grid} setGrid={changeGrid} createFolder={() => setNameDialog({ mode: 'create' })} upload={upload} count={nodeQuery.data?.total || 0} />
         {listing.view === 'trash' && <div className="trash-info"><TrashIcon /><span>Files stay here until you restore or permanently delete them.</span></div>}
         {clipboard.nodes.length > 0 && listing.view === 'all' && <div className="clipboard-bar" role="status"><Clipboard size={15} /><span>{clipboard.nodes.length} ready to {clipboard.mode === 'cut' ? 'move' : 'copy'}</span><div className="clipboard-actions"><Button busy={pasting} onClick={() => { void paste() }}>Paste here</Button><button aria-label="Clear clipboard" onClick={() => setClipboard({ mode: 'copy', nodes: [] })}><X size={15} /></button></div></div>}
@@ -266,7 +276,7 @@ function Workspace({ logout }: { logout: () => Promise<void> }) {
     {moveNodes.length > 0 && <MoveDialog nodes={moveNodes} close={() => setMoveNodes([])} move={parent => runBulk(moveNodes, 'move', parent)} />}
     {deleteNodes.length > 0 && <DeleteDialog nodes={deleteNodes} close={() => setDeleteNodes([])} remove={async () => { let count = 0; try { for (const node of deleteNodes) { await api.permanent(node.id); count++ } } finally { refresh(); setSelected(new Set()); setInspector(null) } notify(`${count} item${count === 1 ? '' : 's'} permanently deleted`) }} />}
     <Preview node={preview} files={previewFiles} onNavigate={setPreview} close={() => setPreview(null)} onDownload={download} previous={previewIndex > 0 ? () => setPreview(previewFiles[previewIndex - 1]) : undefined} next={previewIndex >= 0 && previewIndex < previewFiles.length - 1 ? () => setPreview(previewFiles[previewIndex + 1]) : undefined} />
-    <Suspense fallback={null}>{settings && <Settings open={settings} close={() => setSettings(false)} logout={async () => { try { await logout() } catch (error) { notify(errorMessage(error), true) } }} />}{help && <Help open={help} close={() => setHelp(false)} />}</Suspense>
+    <Suspense fallback={null}>{settings && <Settings open={settings} close={() => setSettings(false)} owner={owner} passwordChanged={passwordChanged} logout={async () => { try { await logout() } catch (error) { notify(errorMessage(error), true) } }} />}{help && <Help open={help} close={() => setHelp(false)} />}</Suspense>
     <Suspense fallback={null}>{commands && <CommandPalette close={() => setCommands(false)} items={items} navigate={navigateView} open={node => action('open', node)} upload={upload} createFolder={() => setNameDialog({ mode: 'create' })} settings={() => setSettings(true)} help={() => setHelp(true)} dark={dark} toggleTheme={() => setDark(!dark)} search={value => { setSearch(value); updateListing({ q: value }) }} />}</Suspense>
     {transfersOpen && <Transfers jobs={copyJobs.data?.items || []} jobsError={copyJobs.isError} retryJobs={() => { void copyJobs.refetch() }} retryJob={async id => { await api.retryCopyJob(id); await copyJobs.refetch() }} cancelJob={async id => { await api.cancelCopyJob(id); await copyJobs.refetch() }} items={transfers.transfers} storageState={diagnostics.isError ? 'unknown' : diagnostics.data?.storage_connection?.state} close={() => setTransfersOpen(false)} pause={transfers.pause} resume={transfers.resume} cancel={transfers.cancel} clearCompleted={transfers.clearCompleted} notify={message => notify(message, true)} />}
     {toast && <div className={`toast ${toast.error ? 'toast-error' : ''}`} role={toast.error ? 'alert' : 'status'}>{toast.error ? <CircleAlert size={17} /> : <Check size={17} />}<span>{toast.message}</span><button aria-label="Dismiss notification" onClick={() => setToast(null)}><X size={14} /></button></div>}

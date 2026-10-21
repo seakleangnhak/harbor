@@ -53,6 +53,10 @@ type Upload struct {
 	TotalChunks    int       `json:"total_chunks"`
 	ReceivedChunks []int     `json:"received_chunks"`
 	ReceivedBytes  int64     `json:"received_bytes"`
+	PartSize       int64     `json:"part_size,omitempty"`
+	StagedChunk    *int      `json:"staged_chunk,omitempty"`
+	StagedParts    []int     `json:"staged_parts,omitempty"`
+	StagedBytes    int64     `json:"staged_bytes,omitempty"`
 	Status         string    `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
 }

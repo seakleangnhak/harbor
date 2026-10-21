@@ -1,5 +1,5 @@
 ARG SOURCE_DATE_EPOCH=0
-ARG HARBOR_VERSION=1.1.0
+ARG HARBOR_VERSION=1.2.0
 FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS web
 WORKDIR /src/web
 COPY web/package*.json ./
@@ -7,16 +7,22 @@ RUN npm ci
 COPY web/ ./
 RUN npm run build
 
-FROM --platform=$BUILDPLATFORM golang:1.26.10-bookworm@sha256:ee3901c61e423732605a51f1b8157c849ec01194ea0a274213b5202b2c11e7bf AS server
-ARG GO_TAGS=telegram
-ARG HARBOR_VERSION
-ARG TARGETOS
-ARG TARGETARCH
+FROM --platform=$BUILDPLATFORM golang:1.26.10-bookworm@sha256:ee3901c61e423732605a51f1b8157c849ec01194ea0a274213b5202b2c11e7bf AS server-source
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
+
+FROM server-source AS backend-checks
+RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
+COPY scripts ./scripts
+
+FROM server-source AS server
+ARG GO_TAGS=telegram
+ARG HARBOR_VERSION
+ARG TARGETOS
+ARG TARGETARCH
 RUN printf '%s\n' "$HARBOR_VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' && \
     CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" GOGC=40 go build -p 1 -tags "$GO_TAGS" -trimpath -buildvcs=false -ldflags="-s -w -X main.buildVersion=$HARBOR_VERSION" -o /drive ./cmd/drive
 RUN CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" GOGC=40 go build -p 1 -trimpath -buildvcs=false -ldflags="-s -w" -o /harbor-recovery ./cmd/harbor-recovery

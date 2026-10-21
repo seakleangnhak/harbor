@@ -15,12 +15,102 @@ import ci_check as check
 
 
 class CICheckTest(unittest.TestCase):
+    def test_verified_ci_binds_latest_main_run_and_returns_safe_receipt(self):
+        commit, repository = 'a' * 40, 'Example-Owner/harbor'
+        candidate = {'id': 321, 'run_attempt': 2, 'head_sha': commit, 'head_branch': 'main',
+                     'event': 'push', 'path': '.github/workflows/ci.yml',
+                     'head_repository': {'full_name': repository}, 'created_at': '2026-10-22T01:02:03Z',
+                     'status': 'completed', 'conclusion': 'success'}
+        environment = {'GITHUB_REPOSITORY': repository, 'GH_TOKEN': 'synthetic-workflow-token'}
+        older = {**candidate, 'id': 320, 'conclusion': 'failure'}
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.object(check, 'run', side_effect=[(commit + '\n').encode(),
+                    json.dumps({'workflow_runs': [older, candidate]}).encode()]) as request:
+            result = check.verified_ci(commit)
+        self.assertEqual(result, {'commit': commit, 'run_id': 321, 'run_attempt': 2,
+                                 'run_url': 'https://github.com/Example-Owner/harbor/actions/runs/321'})
+        self.assertEqual(request.call_args_list[0].args, ('git', 'rev-parse', 'HEAD'))
+        command = request.call_args_list[1].args
+        self.assertEqual(command[:4], ('gh', 'api', '--hostname', 'github.com'))
+        endpoint, query = command[-1].split('?')
+        self.assertEqual(endpoint, 'repos/' + repository + '/actions/workflows/ci.yml/runs')
+        self.assertEqual(check.urllib.parse.parse_qs(query), {'head_sha': [commit], 'branch': ['main'],
+                                                            'event': ['push'], 'per_page': ['10']})
+        self.assertEqual(request.call_args_list[1].kwargs, {'timeout': 60})
+        self.assertNotIn(environment['GH_TOKEN'], repr(command) + json.dumps(result))
+
+    def test_verified_ci_rejects_untrusted_context_before_api(self):
+        commit = 'a' * 40
+        environment = {'GITHUB_REPOSITORY': 'Example-Owner/harbor', 'GH_TOKEN': 'synthetic-workflow-token'}
+        with mock.patch.dict(os.environ, environment, clear=True):
+            for value in ('main', 'A' * 40, commit + '\n', '../untrusted', None):
+                with self.subTest(commit=value), mock.patch.object(check, 'run') as request, \
+                        self.assertRaises(check.QualificationError):
+                    check.verified_ci(value)
+                request.assert_not_called()
+            for changes in ({'GITHUB_REPOSITORY': '../Other/harbor'}, {'GITHUB_REPOSITORY': ''}, {'GH_TOKEN': ''}):
+                with self.subTest(context=changes), mock.patch.dict(os.environ, changes), \
+                        mock.patch.object(check, 'run') as request, self.assertRaises(check.QualificationError):
+                    check.verified_ci(commit)
+                request.assert_not_called()
+            with mock.patch.object(check, 'run', return_value=b'b' * 40) as request, \
+                    self.assertRaises(check.QualificationError):
+                check.verified_ci(commit)
+            self.assertEqual(request.call_count, 1)
+
+    def test_verified_ci_rejects_wrong_run_identity_and_missing_proof(self):
+        commit, repository = 'a' * 40, 'Example-Owner/harbor'
+        candidate = {'id': 321, 'run_attempt': 1, 'head_sha': commit, 'head_branch': 'main',
+                     'event': 'push', 'path': '.github/workflows/ci.yml',
+                     'head_repository': {'full_name': repository}, 'created_at': '2026-10-22T01:02:03Z',
+                     'status': 'completed', 'conclusion': 'success'}
+        invalid = [{**candidate, key: value} for key, value in (
+            ('head_sha', 'b' * 40), ('head_branch', 'preview'), ('event', 'pull_request'),
+            ('path', '.github/workflows/other.yml'), ('path', '.github/workflows/ci.yml@untrusted'),
+            ('head_repository', {'full_name': 'Other/harbor'}), ('head_repository', None),
+            ('head_repository', {'full_name': None}), ('id', True), ('id', 0), ('run_attempt', 0),
+            ('run_attempt', '1'), ('created_at', 'untrusted'), ('status', 'queued'),
+            ('status', 'in_progress'), ('conclusion', 'failure'), ('conclusion', 'skipped'),
+            ('conclusion', 'cancelled'), ('conclusion', None))]
+        payloads = [{'workflow_runs': [value]} for value in invalid]
+        payloads += [{'workflow_runs': []}, {'workflow_runs': None}, {'workflow_runs': [{}]},
+                     {'workflow_runs': [candidate] * 11}, [], {}]
+        environment = {'GITHUB_REPOSITORY': repository, 'GH_TOKEN': 'synthetic-workflow-token'}
+        with mock.patch.dict(os.environ, environment, clear=True):
+            for payload in payloads:
+                with self.subTest(payload=payload), mock.patch.object(check, 'run', side_effect=[
+                        commit.encode(), json.dumps(payload).encode()]), self.assertRaises(check.QualificationError):
+                    check.verified_ci(commit)
+            with mock.patch.object(check, 'run', side_effect=[commit.encode(), b'not JSON']), \
+                    self.assertRaises(check.QualificationError):
+                check.verified_ci(commit)
+
+    def test_verified_ci_never_falls_back_to_older_success(self):
+        commit, repository = 'a' * 40, 'Example-Owner/harbor'
+        success = {'id': 321, 'run_attempt': 1, 'head_sha': commit, 'head_branch': 'main',
+                   'event': 'push', 'path': '.github/workflows/ci.yml',
+                   'head_repository': {'full_name': repository}, 'created_at': '2026-10-22T01:02:03Z',
+                   'status': 'completed', 'conclusion': 'success'}
+        newer = [{**success, 'id': 322, 'conclusion': 'failure'},
+                 {**success, 'id': 322, 'status': 'queued', 'conclusion': None},
+                 {**success, 'run_attempt': 2, 'status': 'in_progress', 'conclusion': None},
+                 {**success, 'id': 320, 'created_at': '2026-10-22T02:02:03Z', 'conclusion': 'failure'}]
+        with mock.patch.dict(os.environ, {'GITHUB_REPOSITORY': repository, 'GH_TOKEN': 'synthetic-workflow-token'}, clear=True):
+            for candidate in newer:
+                for runs in ([success, candidate], [candidate, success]):
+                    with self.subTest(runs=runs), mock.patch.object(check, 'run', side_effect=[
+                            commit.encode(), json.dumps({'workflow_runs': runs}).encode()]), \
+                            self.assertRaises(check.QualificationError):
+                        check.verified_ci(commit)
+
     def test_workflow_policy_rejects_credential_and_gate_regressions(self):
         ci = (check.ROOT / '.github/workflows/ci.yml').read_text()
         publish = (check.ROOT / '.github/workflows/docker-publish.yml').read_text()
         check.workflow_policy(ci, publish)
         for modified in (ci.replace('contents: read', 'contents: write'),
                          ci.replace('  pull_request:', '  pull_request_target:'),
+                         ci.replace('runner: ubuntu-24.04-arm', 'runner: ubuntu-24.04'),
+                         ci.replace('go test -p 1 -race -tags telegram ./...', 'true'),
                          ci + '\n# ${{secrets.GHCR_TOKEN}}',
                          ci.replace('push: false', 'push: true'),
                          check.re.sub(r'actions/checkout@[0-9a-f]{40}', 'actions/checkout@v7', ci)):
@@ -32,6 +122,12 @@ class CICheckTest(unittest.TestCase):
                          publish.replace('  publish:\n    if:', '  publish:\n    # if:'),
                          publish.replace('python3 scripts/release_gate.py', 'true', 1),
                          publish.replace('python3 scripts/ci_check.py package-check\n', 'true\n'),
+                         publish.replace('python3 scripts/ci_check.py verified-ci', 'true'),
+                         publish.replace('      actions: read', '      actions: write'),
+                         publish.replace('          HARBOR_COMMIT: ${{ needs.gate.outputs.commit }}',
+                                         '          HARBOR_COMMIT: ${{ github.sha }}'),
+                         publish.replace('          ref: ${{ needs.gate.outputs.commit }}', '          ref: main', 1),
+                         publish + '\n# uses: ./.github/workflows/ci.yml\n',
                          publish.replace('python3 scripts/ci_check.py verify-published', 'true'),
                          publish.replace('HARBOR_GHCR_PACKAGE_ID: ${{ vars.HARBOR_GHCR_PACKAGE_ID }}', 'UNAPPROVED: value'),
                          publish.replace("HARBOR_GHCR_PACKAGE_VISIBILITY: ${{ vars.HARBOR_GHCR_PACKAGE_VISIBILITY || 'private' }}", 'UNAPPROVED: value'),
@@ -40,6 +136,11 @@ class CICheckTest(unittest.TestCase):
                          publish + '\n# packages: write\n'):
             with self.subTest(source='publish'), self.assertRaises(check.QualificationError):
                 check.workflow_policy(ci, modified)
+        for command in ('python3 scripts/release_gate.py', 'python3 scripts/ci_check.py package-check'):
+            before, last, after = publish.rpartition(command)
+            moved = before + 'true' + after + '\n# ' + last + '\n'
+            with self.subTest(late_gate=command), self.assertRaises(check.QualificationError):
+                check.workflow_policy(ci, moved)
 
     def test_package_privacy_and_repository_linkage_fail_closed(self):
         def response(status, body, code=0):
@@ -314,20 +415,24 @@ class CICheckTest(unittest.TestCase):
                 with self.assertRaises(check.QualificationError):
                     check.setup_request('http://127.0.0.1:1234', 'POST', '/verify', {})
 
-    def test_reproducible_build_compares_both_independent_outputs(self):
-        caches = []
+    def test_reproducible_build_compares_distinct_outputs_with_shared_cache(self):
+        caches, outputs = [], []
         def build(*args, **kwargs):
             path = Path(args[args.index('-o') + 1])
             path.write_bytes(b'executable-' + path.name.encode())
             self.assertIn('-trimpath', args)
             self.assertIn('-buildvcs=false', args)
             caches.append(kwargs['env']['GOCACHE'])
-            self.assertEqual(Path(caches[-1]).parent, path.parent)
-        with mock.patch.object(check, 'run', side_effect=build):
-            self.assertEqual(set(check.reproducible('1.0.1')['reproducible']), {'drive', 'harbor-recovery'})
-        self.assertEqual(caches[0], caches[1])
-        self.assertEqual(caches[2], caches[3])
-        self.assertNotEqual(caches[0], caches[2])
+            outputs.append(path)
+        with mock.patch.dict(os.environ, {'GOCACHE': '/synthetic/go-cache'}), \
+                mock.patch.object(check, 'run', side_effect=build):
+            result = check.reproducible('1.0.1')
+            self.assertEqual(set(result['reproducible']), {'drive', 'harbor-recovery'})
+            self.assertEqual(result['cache_policy'], 'shared')
+            self.assertEqual(len(result['build_seconds']), 2)
+        self.assertEqual(caches, ['/synthetic/go-cache'] * 4)
+        self.assertEqual(len(set(outputs)), 4)
+        self.assertNotEqual(outputs[0].parent, outputs[2].parent)
         def different(*args, **kwargs):
             path = Path(args[args.index('-o') + 1])
             path.write_bytes(path.parent.name.encode())

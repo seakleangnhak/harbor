@@ -1,0 +1,15 @@
+ARG HARBOR_IMAGE=harbor:ci-amd64
+FROM ${HARBOR_IMAGE} AS harbor
+FROM mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c56064be399f3e4de00fd021ac561325f2bfbb2b837a
+WORKDIR /tooling
+RUN npm install --ignore-scripts --no-audit --no-fund --save-exact playwright-core@1.56.1 axe-core@4.14.0
+COPY --from=harbor /app /app
+COPY scripts/browser_check.cjs scripts/account_check.js scripts/preview_check.js scripts/transport_check.js scripts/phase4_large_check.js /checks/
+RUN for check in /checks/*.js /checks/*.cjs; do node --check "$check" || exit 1; done \
+    && cp /tooling/node_modules/axe-core/axe.min.js /checks/axe.min.js \
+    && mkdir -p /scratch && chmod 0777 /scratch
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+USER 65532:65532
+WORKDIR /scratch
+ENTRYPOINT ["node", "/checks/browser_check.cjs"]
+CMD ["chromium", "all"]

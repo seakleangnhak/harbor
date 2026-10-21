@@ -1,5 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import type { Diagnostics, DriveNode, FileKind } from './types.ts'
+import { previewMime } from './media.ts'
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
@@ -9,9 +10,10 @@ export function formatBytes(bytes: number): string {
 
 export function fileKind(node: Pick<DriveNode, 'kind' | 'mime_type' | 'name'>): Exclude<FileKind, ''> {
   if (node.kind === 'folder') return 'folder'
-  if (node.mime_type.startsWith('image/')) return 'image'
-  if (node.mime_type.startsWith('video/')) return 'video'
-  if (node.mime_type.startsWith('audio/')) return 'audio'
+  const mime = previewMime(node) || node.mime_type.trim().toLowerCase()
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
   if (/\.(zip|rar|7z|tar|gz|bz2|xz)$/i.test(node.name) || /zip|rar|7z|tar|gzip|bzip|xz|compressed/i.test(node.mime_type)) return 'archive'
   if (node.mime_type.startsWith('text/') || /pdf|document|sheet|presentation|msword/i.test(node.mime_type) || /\.(pdf|docx?|xlsx?|pptx?|md|json|csv|rtf|odt)$/i.test(node.name)) return 'document'
   return 'other'

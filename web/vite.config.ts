@@ -8,7 +8,7 @@ export default defineConfig({
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   server: {
     proxy: {
-      '/api': 'http://127.0.0.1:8080',
+      '/api': { target: 'http://127.0.0.1:8080', changeOrigin: false },
       '/health': 'http://127.0.0.1:8080',
       '/ready': 'http://127.0.0.1:8080',
     },

@@ -11,6 +11,7 @@ import (
 const (
 	DefaultChunkSize  int64 = 100 << 20
 	MaxChunkSize      int64 = 100 << 20
+	TransportPartSize int64 = 4 << 20
 	maxCiphertextSize       = MaxChunkSize + 4 + 12 + 16 // HD01, GCM nonce and tag.
 )
 
@@ -29,10 +30,11 @@ type ReadSeekCloser interface {
 }
 
 type Config struct {
-	DB        *sql.DB
-	Key       []byte
-	Backend   BlobStore
-	ChunkSize int64
+	DB         *sql.DB
+	Key        []byte
+	Backend    BlobStore
+	ChunkSize  int64
+	StagingDir string
 }
 
 // Engine implementation supplies these operations; kept as a compile-time port
@@ -42,6 +44,8 @@ type Service interface {
 	List(context.Context) ([]domain.Upload, error)
 	Status(context.Context, string) (domain.Upload, error)
 	PutChunk(context.Context, string, int, io.Reader, string) (domain.Upload, error)
+	PutPart(context.Context, string, int, int, io.Reader, string) (domain.Upload, error)
+	CommitChunk(context.Context, string, int) (domain.Upload, error)
 	Complete(context.Context, string) (domain.Manifest, error)
 	Open(context.Context, string) (ReadSeekCloser, domain.Manifest, error)
 	Cancel(context.Context, string) error

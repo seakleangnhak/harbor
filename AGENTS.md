@@ -12,6 +12,30 @@ Build a private single-owner drive. Keep changes small, inspect existing code, v
 
 ## Contracts and security
 
+### v1.2.0 release ownership override
+
+- Owner authorizes scoped CI/CD simplification, sanitized-source push, a new annotated release and GHCR image publication. Preserve original private repository/history, deployment and all runtime state. No visibility changes or remote deployment.
+- Coordinator owns version defaults, docs, review, scans, commits and remote operations. Workflow agent owns `.github/workflows/ci.yml`, `docker-publish.yml` and root `Dockerfile`. Release-check agent owns `scripts/ci_check.py` and its tests. Browser QA owns `scripts/browser_check.cjs` and `scripts/Dockerfile.browser`. Agents never commit or publish.
+- Retain isolated no-network target execution with synthetic fixtures, read-only code/tooling and bounded scratch/resources. Docker Desktop is unavailable locally; authorized GitHub-hosted CI supplies disposable containers. Production dependency-fetching build stages receive no runtime secrets. Require successful CI for the exact release commit before tagging/publishing. Existing release/tag/package identity and visibility gates remain mandatory.
+- Hosted Go compilation caches may use a writable, branch-scoped Actions cache on the disposable runner disk; they contain build artifacts only. Runtime fixtures remain in bounded tmpfs. Cache reuse must not expose credentials or make a failed verification successful.
+
+### Account settings visual refinement ownership override
+
+- Coordinator owns `OwnerAccount.tsx`, `styles.css`, visual integration and docs. Frontend agent owns `Settings.tsx` only: compact Account/Storage/Recovery navigation and existing operational content. Review agent owns `scripts/account_check.js` only and read-only accessibility review. Preserve API/security behavior, earlier preview/transport/account edits and existing design tokens. No dependencies, real account changes, commits, release or deployment.
+- Settings retains its public props and title. Account panel is default; navigation uses native buttons with `aria-current`, responsive horizontal mobile navigation and persistent footer. All forms keep existing endpoints/password/session semantics. No fake metrics, avatars, controls or strength ratings. Source/test execution retains existing isolated-container requirements; Docker remains unavailable until recovered.
+
+### Owner account settings ownership override
+
+- Coordinator owns recovery compatibility, docs and integration. Backend agent owns `internal/api/` account handlers/schema/tests. Frontend agent owns account Settings, Sidebar/Login/App wiring, API/types/styles and related frontend tests. Review agent owns read-only security review and new account browser checks under `scripts/`. Preserve all earlier uncommitted preview/upload work; no commits, push, release or real account changes.
+- Authenticated `PATCH /auth/profile` accepts `{display_name}` and returns the existing session shape with updated `owner`. Name: trimmed, 1–80 Unicode characters, valid UTF-8, no controls. `POST /auth/password` accepts `{current_password,new_password}`, validates 12–72 UTF-8 bytes without CR/LF, verifies current password with throttling, and atomically changes bcrypt hash/revokes all sessions; 204 clears cookie. Wrong current password: 403 `incorrect_password`, not a lost-session 401. Serialize login issuance/password changes to prevent stale-password races.
+- Persist display name and `password_changed_at` in one additive `owner_profile` row (id=1, default name `Owner`, empty timestamp initially). Existing owner hash remains authoritative. Never save new plaintext passwords. Recovery skips obsolete automatically discovered initialization-password files after a recorded password change; explicitly supplied recovery passwords still require verification. Existing databases/archives without the profile table retain prior behavior.
+- Use only synthetic fixtures and existing no-network isolated execution rules. No reads of real environment files, sessions, keys, DBs or deployed services. Docker currently unavailable; do not run target code on host to bypass isolation.
+
+### Client transport parts ownership override
+
+- Coordinator owns domain/storage contracts, startup wiring, API handlers/routes/tests, docs and integration. Storage agent owns engine/staging implementation and storage tests, excluding `contracts.go`. Frontend agent owns upload transport/progress/types/UI and frontend tests. QA agent owns only new transport browser harness and ignored synthetic evidence. Preserve uncommitted preview/minimal-environment changes; no commits, push, release or deployment in this task.
+- Keep storage chunks at 100 MiB and existing manifests intact. New guarded upload routes accept encrypted-at-rest staged 4 MiB client parts, then explicitly commit one assembled storage chunk. `received_bytes` retains remotely committed meaning; additive `part_size`, `staged_chunk`, `staged_parts`, `staged_bytes` describe one bounded pending storage chunk. Never treat sent or staged bytes as completed files. No plaintext staging, credentials or original runtime access; existing isolated no-network verification rules apply.
+
 ### v1.1.0 release ownership override
 
 - Current owner request authorizes scoped cleanup, sanitized-source push, a new annotated release and GHCR publication. Earlier task-specific no-push/no-tag restrictions below are historical. Preserve original development history, v1.0.0, deployment and all private runtime state. No visibility changes or remote application deployment.
