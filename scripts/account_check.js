@@ -31,7 +31,16 @@ async (page) => {
   const section = async name => {
     await sectionButton(name).click()
     assert(await sectionButton(name).getAttribute('aria-current') === 'page', `${name} navigation missing current state`)
-    await settings.getByRole('region', { name, exact: true }).waitFor()
+    const panel = settings.getByRole('region', { name, exact: true })
+    const heading = panel.getByRole('heading', { name: { Account: 'Profile', Storage: 'Storage connection', Recovery: 'Backup & recovery' }[name], exact: true })
+    await heading.waitFor()
+    assert(await panel.evaluate(node => node.scrollTop === 0), `${name} retained previous section scroll position`)
+    const bounds = await panel.boundingBox(), title = await heading.boundingBox()
+    assert(bounds && title && title.y >= bounds.y && title.y + title.height <= bounds.y + bounds.height + 1, `${name} heading clipped after section navigation`)
+    if (name === 'Storage') {
+      const action = await panel.getByRole('button', { name: 'Refresh', exact: true }).boundingBox()
+      assert(action && action.y >= bounds.y && action.y + action.height <= bounds.y + bounds.height + 1, 'Storage refresh clipped after section navigation')
+    }
   }
   const currentCookie = async () => {
     const cookie = (await page.context().cookies(origin)).find(item => item.name === 'drive_session')

@@ -149,6 +149,7 @@ jobs:
         if: matrix.arch == 'amd64'
         run: |
           mkdir -p output/browser
+          status=0
           for engine in chromium webkit; do
             container="harbor-browser-$engine"
             docker run -d --name "$container" --network none --read-only \
@@ -164,8 +165,9 @@ jobs:
               | tar -C output/browser --no-same-owner -xf -
             chmod -R u+rwX output/browser
             docker rm -f "$container"
-            if [ "$result" -ne 0 ]; then exit "$result"; fi
+            if [ "$result" -ne 0 ]; then status=1; fi
           done
+          exit "$status"
       - name: Keep synthetic browser evidence
         if: ${{ always() && matrix.arch == 'amd64' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

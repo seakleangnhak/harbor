@@ -24,7 +24,7 @@ const browserEnv = { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: path.join(root,
 process.env.PLAYWRIGHT_BROWSERS_PATH = browserEnv.PLAYWRIGHT_BROWSERS_PATH
 const { chromium, webkit } = require('/tooling/node_modules/playwright-core')
 const origin = 'http://127.0.0.1:8080', token = 'synthetic-browser-bootstrap-token-32-chars', password = 'Synthetic release browser passphrase'
-const results = [], delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
+const results = [], failures = [], delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds))
 let browser, page, server, suiteRoot
 
 function startServer(env, logFile) {
@@ -110,6 +110,7 @@ async function runSuite(name) {
     if (name === 'account') assert(result.axe?.result === 'PASS' && result.axe.checks >= 32 && result.screenshots.length >= 32, 'Account accessibility/layout coverage missing')
     if (name === 'preview' || name === 'transport') assert(result.axe_checks > 0, `${name} accessibility checks missing`)
     if (name === 'transport') assert(result.restart_tested === true && result.storage_chunks === 2 && result.max_client_body === 4194304, 'Multipart restart qualification missing')
+    fs.writeFileSync(path.join(suiteRoot, 'suite-checks.json'), JSON.stringify(result, null, 2))
     assert(!unexpectedOrigins.length, 'Browser attempted external application requests')
     await page.mouse.move(0, 0)
     await page.evaluate(async () => {
@@ -118,7 +119,7 @@ async function runSuite(name) {
     })
     await page.screenshot({ path: path.join(suiteRoot, 'screenshots', 'final.png'), fullPage: true, animations: 'disabled' })
     assert(await page.evaluate(() => Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) <= innerWidth + 1), `${name} final view horizontal overflow`)
-    const accessibility = await page.evaluate(async () => (await window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })).violations.map(item => ({ id: item.id, targets: item.nodes.map(node => node.target) })))
+    const accessibility = await page.evaluate(async () => (await window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })).violations.map(item => ({ id: item.id, targets: item.nodes.map(node => node.target), summaries: item.nodes.map(node => node.failureSummary) })))
     assert(!accessibility.length, `${name} final view accessibility violations: ${JSON.stringify(accessibility)}`)
     const evidence = { ...result, suite: name, browser: engine, elapsed_seconds: Math.round((performance.now() - started) / 10) / 100, final_view_axe: 'PASS' }
     fs.writeFileSync(path.join(suiteRoot, 'result.json'), JSON.stringify(evidence, null, 2))
@@ -143,7 +144,13 @@ let deadline
 Promise.race([
   (async () => {
     browser = await (engine === 'webkit' ? webkit : chromium).launch({ headless: true, env: browserEnv, args: engine === 'chromium' ? ['--no-sandbox', '--disable-dev-shm-usage'] : [] })
-    for (const name of requested === 'all' ? Object.keys(checks) : [requested]) await runSuite(name)
+    for (const name of requested === 'all' ? Object.keys(checks) : [requested]) {
+      try { await runSuite(name) } catch {
+        failures.push({ suite: name, result: 'FAIL' })
+        console.error(JSON.stringify({ result: 'FAIL', suite: name, browser: engine, message: 'Suite failed; inspect its error.txt' }))
+      }
+    }
+    assert(!failures.length, `Browser suites failed: ${failures.map(item => item.suite).join(', ')}`)
   })(),
   new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('Browser qualification exceeded 15 minutes')), 15 * 60 * 1000) }),
 ]).then(() => {
@@ -152,6 +159,7 @@ Promise.race([
   console.log(JSON.stringify({ result: 'PASS', browser: engine, suites: results.map(item => item.suite), artifact_root: root }))
 }).catch(error => {
   fs.writeFileSync(path.join(root, 'error.txt'), error.stack || String(error))
+  fs.writeFileSync(path.join(root, 'result.json'), JSON.stringify({ result: 'FAIL', browser: engine, adapter: 'local', live_telegram: 'NOT TESTED', suites: results, failures }, null, 2))
   console.error(JSON.stringify({ result: 'FAIL', browser: engine, message: error.message, artifact_root: root }))
   process.exitCode = 1
 }).finally(async () => {

@@ -20,6 +20,8 @@ That run's backend failed in Python synthetic test discovery before executing th
 
 Diagnostic run [39649098387](https://github.com/seakleangnhak/harbor/actions/runs/39649098387) reduced tooling preparation to 48s. Its 57 Python tests exposed four environment errors: three recovery subprocesses blocked by Docker's implicit `noexec` tmpfs, and a release-archive API unavailable in Python 3.11. Explicit test tmpfs `exec` and validated, no-overwrite regular-file extraction address these without changing the production runtime. Browser fixes also handle tooltip-layer dismissal and hidden mobile navigation; full acceptance remains pending.
 
+Run [39650017445](https://github.com/seakleangnhak/harbor/actions/runs/39650017445) completed the account interactions and 32 account screenshot/axe contexts before finding invalid grid semantics in the final empty mobile workspace. The file manager now declares grid/header semantics only when rows exist. Screenshot review also found retained Settings scroll hiding a newly selected section's heading; section-keyed content resets that scroll. New checks cover heading/Refresh visibility. Independent suites and both browser engines now finish collecting evidence before reporting an aggregate failure.
+
 Baseline: hosted CI run [39584667776](https://github.com/seakleangnhak/harbor/actions/runs/39584667776) took 11m47s. Backend job took 11m43s, including 4m13s for two cold-cache builds. New measurements will be compared honestly; browser checks add coverage absent from that baseline.
 
 ## Upgrade and limitations

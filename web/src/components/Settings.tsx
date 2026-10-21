@@ -22,7 +22,7 @@ export function Settings({ open, close, logout, owner, passwordChanged }: { open
   return <Modal open={open} onOpenChange={value => { if (!value) close() }} title="Your private workspace" description="Your account, storage, and recovery essentials." className="settings-modal">
     <div className="settings-layout">
       <nav className="settings-nav" aria-label="Settings sections">{[{ id: 'account', label: 'Account', icon: UserRound }, { id: 'storage', label: 'Storage', icon: HardDrive }, { id: 'recovery', label: 'Recovery', icon: ArrowDownToLine }].map(item => <button key={item.id} id={`settings-nav-${item.id}`} type="button" aria-current={section === item.id ? 'page' : undefined} disabled={accountBusy} onClick={() => setSection(item.id as typeof section)}><item.icon size={17} aria-hidden="true" /><span>{item.label}</span></button>)}</nav>
-      <div className="settings-panel" role="region" aria-labelledby={`settings-nav-${section}`}>
+      <div key={section} className="settings-panel" role="region" aria-labelledby={`settings-nav-${section}`}>
         {section === 'account' && <OwnerAccount owner={owner} passwordChanged={passwordChanged} onBusyChange={setAccountBusy} />}
         {section === 'storage' && <>
           <section className="settings-section">
