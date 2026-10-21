@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
+  <title id="title">Harbor</title>
+  <desc id="desc">A white lighthouse above a blue harbor on a rounded navy square.</desc>
+  <rect x="2" y="2" width="92" height="92" rx="24" fill="#102d43" stroke="#3e6279" stroke-width="2"/>
+  <g fill="#f4f8fa">
+    <path d="m35 26 13-11 13 11z"/>
+    <rect x="40" y="29" width="16" height="12" rx="2"/>
+    <path d="M41 45h14l6 25H35z"/>
+  </g>
+  <path d="m17 30 16-4v15l-16-4zm62 0-16-4v15l16-4z" fill="#81c3e5"/>
+  <path d="M45 70V58h6v12" fill="#102d43"/>
+  <path d="M20 79c7-7 14-7 21 0s14 7 21 0 10-5 14-2" fill="none" stroke="#81c3e5" stroke-width="4" stroke-linecap="round"/>
+</svg>

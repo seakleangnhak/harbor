@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" role="img" aria-labelledby="title desc">
+  <title id="title">Harbor — private cloud drive</title>
+  <desc id="desc">An original lighthouse mark and Harbor wordmark on a deep navy canvas.</desc>
+  <rect x="1" y="1" width="1198" height="258" rx="24" fill="#102332" stroke="#294557" stroke-width="2"/>
+  <g transform="translate(62 66) scale(1.3333)">
+    <rect x="2" y="2" width="92" height="92" rx="24" fill="#102d43" stroke="#3e6279" stroke-width="2"/>
+    <g fill="#f4f8fa"><path d="m35 26 13-11 13 11z"/><rect x="40" y="29" width="16" height="12" rx="2"/><path d="M41 45h14l6 25H35z"/></g>
+    <path d="m17 30 16-4v15l-16-4zm62 0-16-4v15l16-4z" fill="#81c3e5"/>
+    <path d="M45 70V58h6v12" fill="#102d43"/>
+    <path d="M20 79c7-7 14-7 21 0s14 7 21 0 10-5 14-2" fill="none" stroke="#81c3e5" stroke-width="4" stroke-linecap="round"/>
+  </g>
+  <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
+    <text x="232" y="83" fill="#93b7ce" font-size="13" font-weight="600" letter-spacing="3">PRIVATE CLOUD DRIVE</text>
+    <text x="228" y="151" fill="#f4f8fa" font-size="64" font-weight="700" letter-spacing="-2">Harbor</text>
+    <text x="232" y="190" fill="#abc2d0" font-size="23">A home port for your files.</text>
+  </g>
+  <g fill="none" stroke="#294a60" stroke-width="2" stroke-linecap="round">
+    <path d="M792 162c56-26 102-26 154 0s100 26 155 0M760 188c56-26 102-26 154 0s100 26 155 0M826 214c56-26 102-26 154 0s100 26 155 0"/>
+  </g>
+</svg>

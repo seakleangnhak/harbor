@@ -1,0 +1,138 @@
+name: Docker release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing annotated stable tag selected as the workflow ref (for example v1.0.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: harbor-ghcr-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  gate:
+    name: Verify stable tag and trusted source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      minor: ${{ steps.release.outputs.minor }}
+      commit: ${{ steps.release.outputs.commit }}
+      image: ${{ steps.release.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Reject untrusted refs and backwards latest updates
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: python3 scripts/release_gate.py
+
+  verify:
+    name: Complete release validation
+    needs: gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      version: ${{ needs.gate.outputs.version }}
+
+  publish:
+    name: Publish validated stable image
+    needs: [gate, verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: ghcr-release
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.gate.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Recheck tag before registry authentication
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: python3 scripts/release_gate.py
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          image: docker.io/tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: v0.38.1
+          driver-opts: image=moby/buildkit@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+      - name: Stable tags and OCI labels
+        id: metadata
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ needs.gate.outputs.image }}
+          tags: |
+            type=raw,value=${{ needs.gate.outputs.version }}
+            type=raw,value=${{ needs.gate.outputs.minor }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.gate.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.gate.outputs.commit }}
+            org.opencontainers.image.description=Private, self-hosted Telegram-backed cloud drive
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/${{ needs.gate.outputs.commit }}/README.md
+      - name: Authenticate only after all release tests pass
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish both architectures with SBOM and minimal provenance
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          provenance: mode=min
+          sbom: generator=docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
+          build-args: |
+            GO_TAGS=telegram
+            HARBOR_VERSION=${{ needs.gate.outputs.version }}
+            SOURCE_DATE_EPOCH=0
+          cache-from: |
+            type=gha,scope=harbor-amd64
+            type=gha,scope=harbor-arm64
+            type=gha,scope=harbor-release
+          cache-to: type=gha,mode=max,scope=harbor-release
+      - name: Verify published platforms and record immutable digest
+        env:
+          IMAGE: ${{ needs.gate.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          docker buildx imagetools inspect --raw "$IMAGE@$DIGEST" > manifest.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('manifest.json').read_text())
+          platforms = {m['platform']['os'] + '/' + m['platform']['architecture'] for m in manifest['manifests']}
+          assert {'linux/amd64', 'linux/arm64'} <= platforms, platforms
+          assert platforms <= {'linux/amd64', 'linux/arm64', 'unknown/unknown'}, platforms
+          PY
+          # shellcheck disable=SC2016 # Markdown backticks are literal.
+          printf '### Harbor image\n\n`%s@%s`\n\nPlatforms: linux/amd64, linux/arm64. SBOM and BuildKit provenance attached.\n' "$IMAGE" "$DIGEST" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,48 @@
+name: Bug report
+description: Report a reproducible problem using safe demonstration data.
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security concern? Follow SECURITY.md and report privately. Never attach .env, Telegram credentials/session data, invite links, channel identifiers, cookies, content keys, recovery passwords, databases, backups, or private logs/screenshots.
+  - type: input
+    id: version
+    attributes:
+      label: Harbor version or commit
+      placeholder: v1.0.0 or a commit SHA
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, browser/version, Docker or local build, CPU architecture, local or Telegram adapter. Omit hostnames, account/channel details, and private paths.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use generated files and a disposable local drive where possible.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: Include safe error categories and whether data was affected. Do not publish private diagnostic dumps.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Optional screenshots, minimal logs, or test results. Inspect every attachment before posting.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I reviewed this report and its attachments for private data and credentials.
+          required: true

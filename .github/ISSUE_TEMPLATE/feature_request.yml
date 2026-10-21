@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose a focused improvement to Harbor's private-drive experience.
+title: "feature: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Harbor is a lightweight, single-owner private drive. Describe a concrete use case; keep private files, account/channel details, credentials, and installation paths out of this request.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem needs solving?
+      description: Explain the current workflow and who it affects.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful improvement and relevant recovery, security, or accessibility considerations.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or workarounds
+      description: Optional existing approaches and their limits.

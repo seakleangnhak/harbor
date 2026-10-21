@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+    inputs:
+      version:
+        description: Stable runtime version supplied by the release gate
+        required: false
+        default: '1.0.0'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  workflows:
+    name: Workflow and release policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install pinned workflow linter
+        run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Validate workflows, README, policy and release tooling
+        run: python3 scripts/ci_check.py workflows
+
+  backend:
+    name: Go tests, race, vet and reproducibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      GOGC: '40'
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - run: go mod verify
+      - run: go test -p 1 ./...
+      - run: go test -p 1 -tags telegram ./...
+      - run: go test -p 1 -race ./...
+      - run: go test -p 1 -race -tags telegram ./...
+      - run: go vet -p 1 ./...
+      - run: go vet -p 1 -tags telegram ./...
+      - name: Compare independent deterministic binary builds
+        env:
+          HARBOR_VERSION: ${{ inputs.version || '1.0.0' }}
+        run: python3 scripts/ci_check.py reproducible --version "$HARBOR_VERSION"
+
+  frontend:
+    name: Frontend tests, types and production assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+
+  docker:
+    name: Docker ${{ matrix.arch }} build and smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        if: matrix.arch == 'arm64'
+        with:
+          image: docker.io/tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: v0.38.1
+          driver-opts: image=moby/buildkit@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+      - name: Build production image without credentials
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          push: false
+          provenance: false
+          tags: harbor:ci-${{ matrix.arch }}
+          build-args: |
+            GO_TAGS=telegram
+            HARBOR_VERSION=${{ inputs.version || '1.0.0' }}
+            SOURCE_DATE_EPOCH=0
+          cache-from: type=gha,scope=harbor-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=harbor-${{ matrix.arch }}
+      - name: Verify private runtime, checksums and persistent restart
+        env:
+          HARBOR_IMAGE: harbor:ci-${{ matrix.arch }}
+          HARBOR_PLATFORM: linux/${{ matrix.arch }}
+          HARBOR_VERSION: ${{ inputs.version || '1.0.0' }}
+        run: python3 scripts/ci_check.py docker-smoke --image "$HARBOR_IMAGE" --platform "$HARBOR_PLATFORM" --version "$HARBOR_VERSION"
