@@ -172,7 +172,10 @@ jobs:
               --entrypoint sleep harbor-browser:ci 1800
             result=0
             docker exec "$container" node /checks/browser_check.cjs "$engine" all || result=$?
-            docker cp "$container:/scratch/." output/browser/
+            docker exec "$container" tar -C /scratch --exclude='*/data' --exclude='*/home' --exclude='*/tmp' \
+              --exclude='*/Resumable transport.bin' -cf - . \
+              | tar -C output/browser --no-same-owner -xf -
+            chmod -R u+rwX output/browser
             docker rm -f "$container"
             if [ "$result" -ne 0 ]; then exit "$result"; fi
           done
@@ -182,5 +185,5 @@ jobs:
         with:
           name: browser-qualification
           path: output/browser
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 7

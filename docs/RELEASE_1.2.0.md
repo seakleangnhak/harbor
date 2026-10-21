@@ -14,6 +14,8 @@
 
 Local Docker Desktop is unavailable. New account/UI/release changes require fresh hosted execution; earlier successful local preview/transport tests are historical evidence only. Tests must pass before creating the release tag. Actual run URLs, image digest, platform/attestation checks, smoke results and timings will be recorded here after execution.
 
+Initial hosted candidate run [39646590283](https://github.com/seakleangnhak/harbor/actions/runs/39646590283) exposed a browser-test reload race: the helper checked navigation visibility before React mounted. The helper now waits for attachment. Its tmpfs evidence export also omitted screenshots; streamed export and fail-on-missing artifacts replace the silent path. Both production architecture builds and encrypted checksum/restart/recreation smoke checks passed in that run; browser acceptance requires the corrected rerun.
+
 Baseline: hosted CI run [39584667776](https://github.com/seakleangnhak/harbor/actions/runs/39584667776) took 11m47s. Backend job took 11m43s, including 4m13s for two cold-cache builds. New measurements will be compared honestly; browser checks add coverage absent from that baseline.
 
 ## Upgrade and limitations
