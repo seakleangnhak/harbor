@@ -1,6 +1,6 @@
 # Browser onboarding
 
-Current source can initialize a fresh Harbor drive entirely through its web UI: create your owner password, choose storage, and authorize Telegram with QR and optional two-step verification. Existing initialized drives retain their login, files, key, session and storage binding.
+Current source can initialize a fresh Harbor drive entirely through its web UI: create your owner password, choose storage, and authorize Telegram with QR and optional two-step verification. Existing initialized drives retain their login, files, key, session and storage binding. See the [onboarding UI review](ONBOARDING_UI_REVIEW.md) for current light/dark screenshots and scoped browser qualification.
 
 **Build this checkout. Published image `ghcr.io/seakleangnhak/harbor:1.0.1` and the pinned `compose.dokploy.yaml` use the earlier terminal setup.** These changes have not been added to that image.
 

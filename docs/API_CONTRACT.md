@@ -33,6 +33,7 @@ Protected status type:
 type SetupState = {
   state: 'waiting' | 'scanning' | 'password' | 'verified' | 'failed';
   account_ready: boolean;
+  flow_active: boolean; // protected status only; active connection/QR/2FA/verified flow
   qr_image?: string; // temporary PNG data URI, only while scanning
   error?: string; // fixed safe guidance
   error_code?: string;
@@ -50,6 +51,8 @@ type SetupState = {
 | `POST /setup/complete` | `{adapter:"telegram"|"local"}` | 200 `{required:false}` after durable activation; then first-run listener transitions to normal API |
 
 Telegram input requires a positive 32-bit API ID, a 32-hex-character API hash, and an owned private channel invite or message link. Optional Bot API channel IDs normalize to positive MTProto IDs; any supplied ID must match the resolved channel. Public aliases, auto-joining, linked discussion and channel auto-delete are rejected. Account/session credentials are never returned in setup status; only a temporary QR is exposed to the token holder. QR authorization times out after three minutes; starts are limited to four per 15-minute window. Telegram two-step input is bounded to 1,024 bytes.
+
+Protected `flow_active` distinguishes an idle `waiting` state from connection or two-step verification in progress, so a reloaded browser can resume polling after token verification. It remains true for a verified flow and becomes false after failure/cancellation. Cancellation can still be releasing its session worker; `setup_busy` requests must be retried after that worker exits. The browser preserves this guard and uses fixed retry guidance rather than suggesting a reload. Public status remains `{required:boolean}`.
 
 Completion requires an owner password and, for Telegram, successful account/channel verification. An active authorization worker yields409 `setup_busy`. A private atomic `setup.pending`→`setup` directory activation saves configuration, owner credentials and verified session together. Conflicting nonempty environment overrides reject completion; existing metadata prevents takeover. Saved configuration is loaded on restart. Browser clients must wait for `/ready` after completion because listener/storage startup can briefly interrupt requests; after a successful save, retry readiness or reload rather than creating another account. See [web onboarding](WEB_ONBOARDING.md).
 

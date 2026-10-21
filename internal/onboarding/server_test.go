@@ -155,13 +155,26 @@ func TestTelegramQRPasswordAndCommit(t *testing.T) {
 	input := fixtureTelegram()
 	input.ChannelID = -1000000012345
 	var committed Completion
+	show := make(chan struct{})
+	prompt := make(chan struct{})
+	approve := make(chan struct{})
 	s := fixtureServer(t, Config{
 		SetupTelegram: func(ctx context.Context, got TelegramInput, showQR func(context.Context, string) error, password func(context.Context) (string, error)) error {
 			if got.ChannelID != 12345 {
 				return errors.New("channel ID was not normalized")
 			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-show:
+			}
 			if err := showQR(ctx, "tg://login?token=c3ludGhldGlj"); err != nil {
 				return err
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-prompt:
 			}
 			value, err := password(ctx)
 			if err != nil {
@@ -170,22 +183,50 @@ func TestTelegramQRPasswordAndCommit(t *testing.T) {
 			if value != "synthetic two-step password" {
 				return errors.New("unexpected password")
 			}
-			return nil
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-approve:
+				return nil
+			}
 		},
 		Commit: func(_ context.Context, value Completion) error { committed = value; return nil },
 	})
+	response := request(s, "POST", "/api/v1/setup/verify", nil, nil)
+	requireStatus(t, response, 200)
+	if !strings.Contains(response.Body.String(), `"flow_active":false`) {
+		t.Fatal("idle protected state did not report inactive flow")
+	}
 	requireStatus(t, request(s, "POST", "/api/v1/setup/account", map[string]string{"password": "synthetic owner password"}, nil), 200)
 	requireStatus(t, request(s, "POST", "/api/v1/setup/telegram/password", map[string]string{"password": "synthetic two-step password"}, nil), 409)
 	requireStatus(t, request(s, "POST", "/api/v1/setup/telegram", input, nil), 202)
+	if state := waitState(t, s, "waiting"); !state.FlowActive {
+		t.Fatal("connecting state lost active flow")
+	}
+	close(show)
+	if state := waitState(t, s, "scanning"); !state.FlowActive {
+		t.Fatal("QR state lost active flow")
+	}
+	close(prompt)
 	state := waitState(t, s, "password")
-	if !state.AccountReady || state.QRImage != "" {
+	if !state.AccountReady || !state.FlowActive || state.QRImage != "" {
 		t.Fatal("two-step state did not hide QR")
 	}
 	requireStatus(t, request(s, "POST", "/api/v1/setup/telegram", input, nil), 409)
 	requireStatus(t, request(s, "POST", "/api/v1/setup/complete", map[string]string{"adapter": "telegram"}, nil), 409)
 	requireStatus(t, request(s, "POST", "/api/v1/setup/telegram/password", map[string]string{"password": "synthetic two-step password"}, nil), 202)
-	waitState(t, s, "verified")
-	response := request(s, "GET", "/api/v1/setup/telegram", nil, nil)
+	if state := waitState(t, s, "waiting"); !state.FlowActive {
+		t.Fatal("two-step verification lost active flow")
+	}
+	close(approve)
+	if state := waitState(t, s, "verified"); !state.FlowActive {
+		t.Fatal("verified state lost active flow before commit")
+	}
+	response = request(s, "GET", "/api/v1/setup/status", nil, nil)
+	if strings.TrimSpace(response.Body.String()) != `{"required":true}` {
+		t.Fatal("public status exposed active flow state")
+	}
+	response = request(s, "GET", "/api/v1/setup/telegram", nil, nil)
 	for _, secret := range []string{input.AppHash, input.ChannelLink, "two-step password", "synthetic owner password"} {
 		if strings.Contains(response.Body.String(), secret) {
 			t.Fatal("protected state echoed credentials")
@@ -221,7 +262,7 @@ func TestQRRenderingCancellationAndSafeErrors(t *testing.T) {
 	}
 	requireStatus(t, request(s, "DELETE", "/api/v1/setup/telegram", nil, nil), 204)
 	state = waitState(t, s, "failed")
-	if state.ErrorCode != "canceled" || state.QRImage != "" {
+	if state.ErrorCode != "canceled" || state.QRImage != "" || state.FlowActive {
 		t.Fatal("cancellation retained credential QR")
 	}
 	s.Close()
@@ -233,7 +274,7 @@ func TestQRRenderingCancellationAndSafeErrors(t *testing.T) {
 		return errors.New("sensitive upstream detail")
 	}})
 	requireStatus(t, request(failed, "POST", "/api/v1/setup/telegram", fixtureTelegram(), nil), 202)
-	if state := waitState(t, failed, "failed"); strings.Contains(state.Error, "sensitive") || state.ErrorCode != "unknown" {
+	if state := waitState(t, failed, "failed"); strings.Contains(state.Error, "sensitive") || state.ErrorCode != "unknown" || state.FlowActive {
 		t.Fatal("provider error escaped redaction")
 	}
 }

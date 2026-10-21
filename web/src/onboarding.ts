@@ -1,5 +1,5 @@
 export type TelegramSetupState = 'waiting' | 'scanning' | 'password' | 'verified' | 'failed'
-export type TelegramSetup = { state: TelegramSetupState; qr_image?: string; error_code?: string; account_ready?: boolean }
+export type TelegramSetup = { state: TelegramSetupState; flow_active?: boolean; qr_image?: string; error_code?: string; account_ready?: boolean }
 export type TelegramDetails = { app_id: number; app_hash: string; channel_link: string; channel_id?: number }
 
 export class SetupError extends Error {
@@ -39,11 +39,12 @@ export async function setupRequest<T>(path: string, token: string, method = 'GET
   if (!response.ok) {
     const details = await response.json().catch(() => ({}))
     if (response.status === 401 && details?.code === 'setup_expired') throw new SetupError('Setup expired. Restart Harbor, then reload this page to begin again.', 401)
+    if (response.status === 409 && details?.code === 'setup_busy') throw new SetupError('Telegram is still finishing the previous step. Wait a moment, then retry.', 409)
     const messages: Record<number, string> = {
       400: 'Check the entered details and try again.', 401: 'Setup token was not accepted. Use DRIVE_SETUP_TOKEN from your deployment environment.',
       403: 'Setup requires a same-origin connection. Open Harbor directly using its configured address.',
       404: 'Setup is closed. Reload Harbor to sign in.', 409: 'Setup state changed. Reload Harbor to continue.',
-      413: 'Setup request is too large.', 429: 'Too many setup attempts. Wait a minute before retrying.',
+      413: 'Setup request is too large.', 429: 'Too many setup attempts. Wait 15 minutes before retrying.',
     }
     throw new SetupError(messages[response.status] || 'Setup could not finish. Retry or check the server diagnostics.', response.status)
   }
@@ -90,13 +91,13 @@ export function validateOwnerPassword(password: string, confirmation: string): s
 }
 
 export function telegramDetails(appID: string, appHash: string, channelLink: string, channelID: string): TelegramDetails {
-  const id = Number(appID), channel = channelID.trim()
+  const id = Number(appID), channel = channelID.trim(), link = channelLink.trim().replace(/\/$/, '')
   if (!/^\d+$/.test(appID.trim()) || !Number.isSafeInteger(id) || id <= 0 || id > 2147483647) throw new SetupError('Enter the numeric API ID from my.telegram.org/apps.')
   if (!/^[a-f\d]{32}$/i.test(appHash.trim())) throw new SetupError('Enter the 32-character API hash from my.telegram.org/apps.')
   let url: URL
-  try { url = new URL(channelLink.trim()) } catch { throw new SetupError('Enter a current private channel link, such as https://t.me/+…') }
+  try { url = new URL(link) } catch { throw new SetupError('Enter a current private channel link, such as https://t.me/+…') }
   if (url.protocol !== 'https:' || url.hostname !== 't.me' || url.username || url.password || url.port || url.search || url.hash || !/^\/(?:\+[A-Za-z0-9_-]+|joinchat\/[A-Za-z0-9_-]+|c\/\d+\/\d+)\/?$/.test(url.pathname)) throw new SetupError('Use a private https://t.me/+… invite link or private channel message link.')
   const channelNumber = Number(channel)
   if (channel && (!/^-?\d+$/.test(channel) || !Number.isSafeInteger(channelNumber) || channelNumber === 0 || channelNumber < 0 && (channelNumber >= -1000000000000 || channelNumber <= -2000000000000))) throw new SetupError('Channel ID must be a valid numeric Telegram channel ID, or leave it empty.')
-  return { app_id: id, app_hash: appHash.trim(), channel_link: channelLink.trim(), ...(channel ? { channel_id: channelNumber } : {}) }
+  return { app_id: id, app_hash: appHash.trim(), channel_link: link, ...(channel ? { channel_id: channelNumber } : {}) }
 }

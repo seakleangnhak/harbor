@@ -50,6 +50,7 @@ type Config struct {
 type setupState struct {
 	State        string `json:"state"`
 	AccountReady bool   `json:"account_ready"`
+	FlowActive   bool   `json:"flow_active"`
 	QRImage      string `json:"qr_image,omitempty"`
 	Error        string `json:"error,omitempty"`
 	ErrorCode    string `json:"error_code,omitempty"`
@@ -227,7 +228,7 @@ func (s *Server) allowFailedToken(remote string) bool {
 }
 
 func (s *Server) stateLocked() setupState {
-	state := setupState{State: "waiting", AccountReady: s.password != ""}
+	state := setupState{State: "waiting", AccountReady: s.password != "", FlowActive: s.flow != nil && s.flow.state != "failed"}
 	if s.flow != nil {
 		state.State, state.QRImage, state.Error, state.ErrorCode = s.flow.state, s.flow.qrImage, s.flow.error, s.flow.code
 	}

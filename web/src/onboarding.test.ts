@@ -17,6 +17,7 @@ test('Telegram setup accepts private selectors and optional safe numeric channel
   assert.deepEqual(telegramDetails('123', hash, 'https://t.me/+demo_invite', ''), { app_id: 123, app_hash: hash, channel_link: 'https://t.me/+demo_invite' })
   assert.equal(telegramDetails('123', hash, 'https://t.me/c/123/4', '-1000000000123').channel_id, -1000000000123)
   assert.equal(telegramDetails('123', hash, 'https://t.me/joinchat/demo_invite', '123').channel_id, 123)
+  for (const link of ['https://t.me/+demo_invite/', 'https://t.me/joinchat/demo_invite/', 'https://t.me/c/123/4/']) assert.equal(telegramDetails('123', hash, link, '').channel_link, link.slice(0, -1))
   for (const link of ['https://t.me/publicname', 'http://t.me/+demo', 'https://example.com/+demo', 'https://user:secret@t.me/+demo', 'https://t.me/+demo?secret=1', 'https://t.me/+demo#token']) assert.throws(() => telegramDetails('123', hash, link, ''), SetupError)
   assert.throws(() => telegramDetails('1.2', hash, 'https://t.me/+demo', ''), /numeric API ID/)
   assert.throws(() => telegramDetails('2147483648', hash, 'https://t.me/+demo', ''), /numeric API ID/)
@@ -39,6 +40,10 @@ test('setup transport keeps bootstrap token in header and never echoes server se
     await assert.rejects(setupRequest('/verify', 'invalid', 'POST', {}), error => error instanceof SetupError && error.status === 401 && !error.message.includes('private-provider-secret') && error.message.includes('Setup token'))
     globalThis.fetch = async () => new Response(JSON.stringify({ code: 'setup_expired', error: 'private-provider-secret' }), { status: 401 })
     await assert.rejects(setupRequest('/verify', 'expired', 'POST', {}), error => error instanceof SetupError && error.status === 401 && error.message.includes('Restart Harbor') && !error.message.includes('private-provider-secret'))
+    globalThis.fetch = async () => new Response(JSON.stringify({ code: 'setup_busy', error: 'private-provider-secret' }), { status: 409 })
+    await assert.rejects(setupRequest('/telegram', 'token', 'POST', {}), error => error instanceof SetupError && error.status === 409 && error.message.includes('Wait a moment') && !error.message.includes('private-provider-secret'))
+    globalThis.fetch = async () => new Response(null, { status: 429, headers: { 'Retry-After': '900' } })
+    await assert.rejects(setupRequest('/telegram', 'token', 'POST', {}), /Wait 15 minutes/)
     globalThis.fetch = async () => { throw new TypeError('private-server-path') }
     await assert.rejects(setupRequest('/telegram', 'token'), error => error instanceof SetupError && !error.message.includes('private-server-path'))
   } finally { globalThis.fetch = original }

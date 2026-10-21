@@ -14,6 +14,7 @@ Build a private single-owner drive. Keep changes small, inspect existing code, v
 
 ### Web onboarding ownership override
 
+- Premium UI follow-up: coordinator owns `Onboarding.tsx`/`onboarding.css`, visual integration and evidence; QA agent owns only `scripts/onboarding_ui_check.js`. Other agents review read-only. Preserve setup API/security behavior and keep all target execution in the isolated fixture sandboxes below.
 - Coordinator: `cmd/drive/`, `web/src/App.tsx`, deployment/config/docs, integration and verification. Work in sanitized public export only. Preserve original repository, running deployments, sessions and data. No push, tag or remote deployment in this task.
 - Onboarding backend agent: new `internal/onboarding/` only. Guarded setup HTTP handler; injectable Telegram setup and commit callbacks; same-origin, short-lived token authorization, bounded requests and safe error responses. No main/storage/frontend edits.
 - Storage agent: `internal/storage/` only. New uploads use 100 MiB chunks; old manifests retain their own geometry. Bound memory/concurrency and ciphertext limits, Telegram multipart correctness and regression tests. Do not change public Service interface without agreement.

@@ -1,5 +1,11 @@
 # Progress
 
+## Premium onboarding UI — local qualification PASS
+
+First-run setup now uses a compact responsive shell, clear progress, native provider cards, light/dark control, accessible secret fields and distinct Telegram/review states. Protected active-flow status fixes reload recovery without exposing account/channel identity. Retry guidance and trailing-slash channel normalization align with backend behavior. Existing workspace, encrypted state and deployment remain intact.
+
+Default Go tests/race/vet and 29 frontend tests/typecheck/build pass. Final Chromium and WebKit runs pass 180 layout/theme checks and 180 axe audits with zero violations/page errors. Reviewed desktop/mobile light/dark screenshots are saved. Telegram states are simulated; both browsers verify actual local completion/login and a 200 KiB upload/download with SHA-256 equality. [Audit and evidence](ONBOARDING_UI_REVIEW.md). No push, image publication or remote deployment.
+
 ## Browser onboarding and 100 MiB chunks — local qualification PASS
 
 Fresh source installations now start from Compose/container runtime environment and a random `DRIVE_SETUP_TOKEN`, then create their owner password and choose local/Telegram storage in the web UI. Telegram uses guarded QR/optional two-step input, private-channel verification and an atomically activated private configuration/session bundle. Existing initialized data, legacy CLI/environment setup, keys, sessions and 4 MiB manifests remain supported. Current source features are not present in published image 1.0.1; its pinned Dokploy template remains on the legacy flow. No new image release, push or remote deployment is implied.
