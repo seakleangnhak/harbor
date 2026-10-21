@@ -96,7 +96,7 @@ Version 1.0.1 remains available with its older terminal setup and 4 MiB chunks. 
 
 ### Local development
 
-Requires Go **1.26.10+**, Node.js **24+**, and npm. macOS and Linux are supported. Python 3.11+ runs acceptance/recovery helpers; reproducible release packaging needs Python 3.12+ and Docker Buildx.
+Requires Go **1.26.10+**, Node.js **24+**, and npm. macOS and Linux are supported. Python 3.11+ runs acceptance/recovery helpers; reproducible release packaging also needs Docker Buildx.
 
 ```sh
 (cd web && npm ci && npm run build)

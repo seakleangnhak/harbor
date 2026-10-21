@@ -42,7 +42,7 @@ Fresh local evidence lives under ignored `output/open-source/qa/`; raw private r
 
 Fresh-cache native binary SHA-256: `drive` — `6d56b8d4ad20b9fa95f2c51f5db376286e3072b0eb031bb7a3f3e41ef25be608`; `harbor-recovery` — `35916e672c52bf24e92b330214be20a3b453a921fab28a038efab8ea32ace1fd`. The two attempts use separate empty `GOCACHE` directories; only immutable module downloads are shared. Native binary equality does not imply byte-identical cross-architecture images. An initial warm-cache comparison was not accepted as independent evidence; a resource-paused attempt was safely stopped and restarted before the final successful run.
 
-Local Go toolchain: `go1.26.10 darwin/arm64`. Node 24 qualification uses installed `v24.16.0`; workflow selects major 24. Python local tooling uses 3.14.7; helpers use stdlib and support Python 3.11+ except release packaging's documented Python 3.12+ requirement.
+Historical local Go toolchain: `go1.26.10 darwin/arm64`. Node 24 qualification used installed `v24.16.0`; workflow selects major 24. Python local tooling used 3.14.7. Current helpers and release packaging support Python 3.11+; source extraction validates regular files/directories and uses exclusive writes with controlled modes rather than applying archive ownership or special permissions.
 
 ## Repeat checks
 

@@ -22,7 +22,7 @@ async (page) => {
   const navigation = settings.getByRole('navigation', { name: 'Settings sections', exact: true })
   const sectionButton = name => navigation.getByRole('button', { name, exact: true })
   const openSettings = async () => {
-    await button('Settings').waitFor({ state: 'attached' })
+    await page.getByRole('button', { name: 'Settings', exact: true, includeHidden: true }).waitFor({ state: 'attached' })
     if (!(await button('Settings').isVisible())) await button('Open navigation').click()
     await button('Settings').click(); await settings.waitFor()
     assert(await sectionButton('Account').getAttribute('aria-current') === 'page', 'Account must be default settings section')

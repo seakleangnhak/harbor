@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a local release from an explicit trusted Git commit, never the worktree.
 
-Requires Git, Docker/Buildx and Python 3.12+. No push, tag or deployment is performed.
+Requires Git, Docker/Buildx and Python 3.11+. No push, tag or deployment is performed.
 """
 import argparse
 import gzip
@@ -60,6 +60,8 @@ def base_images(dockerfile):
 
 
 def source_archive(root, commit, destination, context):
+    if context.is_symlink() or not context.is_dir() or any(context.iterdir()):
+        raise ValueError('Source extraction requires a fresh empty directory')
     raw = context.parent / 'source.tar'
     run('git', 'archive', '--format=tar', '--output=' + str(raw), commit, cwd=root)
     with tarfile.open(raw) as archive:
@@ -67,7 +69,17 @@ def source_archive(root, commit, destination, context):
         names = {m.name for m in members if m.isfile()}
         if not {'Dockerfile', 'compose.yaml', 'go.mod', 'go.sum', 'web/package-lock.json'} <= names:
             raise ValueError('Source archive lacks required release files')
-        archive.extractall(context, members=members, filter='data')
+        for member in members:
+            path = context / member.name
+            if not path.resolve().is_relative_to(context.resolve()):
+                raise ValueError('Source archive path escapes its extraction directory')
+            if member.isdir():
+                path.mkdir(mode=0o755, parents=True, exist_ok=True)
+            else:
+                path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+                with archive.extractfile(member) as incoming, path.open('xb') as outgoing:
+                    shutil.copyfileobj(incoming, outgoing)
+                path.chmod(0o755 if member.mode & 0o111 else 0o644)
     with raw.open('rb') as incoming, destination.open('xb') as outgoing:
         with gzip.GzipFile(filename='', mode='wb', fileobj=outgoing, mtime=0) as compressed:
             shutil.copyfileobj(incoming, compressed)

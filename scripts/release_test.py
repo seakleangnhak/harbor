@@ -24,6 +24,9 @@ class ReleaseTest(unittest.TestCase):
                 path = root / name
                 path.parent.mkdir(exist_ok=True)
                 path.write_text(('FROM example@sha256:' + 'a' * 64 + '\n') * 3 if name == 'Dockerfile' else '{}')
+            script = root / 'check.sh'
+            script.write_text('#!/bin/sh\nexit 0\n')
+            script.chmod(0o755)
             subprocess.run(['git', '-C', str(root), 'add', '.'], check=True)
             subprocess.run(['git', '-C', str(root), '-c', 'user.name=Fixture', '-c',
                             'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture'], check=True)
@@ -36,11 +39,14 @@ class ReleaseTest(unittest.TestCase):
                 release.source_archive(root, commit, root / (str(number) + '.gz'), context)
                 self.assertEqual((context / 'go.mod').read_text(), '{}')
                 self.assertFalse((context / '.env').exists())
+                self.assertEqual((context / 'go.mod').stat().st_mode & 0o7777, 0o644)
+                self.assertEqual((context / 'check.sh').stat().st_mode & 0o7777, 0o755)
             self.assertEqual((root / '0.gz').read_bytes(), (root / '1.gz').read_bytes())
             self.assertNotIn(b'must-not-export', gzip.decompress((root / '0.gz').read_bytes()))
 
     def test_unsafe_archive_members_are_rejected(self):
-        for name, kind in (('../outside', tarfile.REGTYPE), ('.env', tarfile.REGTYPE),
+        for name, kind in (('../outside', tarfile.REGTYPE), ('/outside', tarfile.REGTYPE),
+                           ('folder/../../outside', tarfile.REGTYPE), ('.env', tarfile.REGTYPE),
                            ('data/drive.db', tarfile.REGTYPE), ('content.key', tarfile.REGTYPE),
                            ('output/private.txt', tarfile.REGTYPE), ('web/node_modules/x', tarfile.REGTYPE),
                            ('nested/data-custom/file', tarfile.REGTYPE), ('nested/private.session.json', tarfile.REGTYPE),
@@ -53,6 +59,24 @@ class ReleaseTest(unittest.TestCase):
                 archive.addfile(member)
                 with self.assertRaises(ValueError):
                     release.safe_members(archive)
+
+    def test_source_archive_rejects_populated_or_symlink_destinations_before_export(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            outside = root / 'outside'
+            outside.mkdir()
+            sentinel = outside / 'keep'
+            sentinel.write_text('must-not-change')
+            linked = root / 'linked'
+            linked.symlink_to(outside, target_is_directory=True)
+            populated = root / 'populated'
+            populated.mkdir()
+            (populated / 'nested').symlink_to(outside, target_is_directory=True)
+            for context in (outside, linked, populated):
+                with self.subTest(context=context), patch.object(release, 'run') as export, self.assertRaises(ValueError):
+                    release.source_archive(root, 'trusted-commit', root / 'archive.gz', context)
+                export.assert_not_called()
+            self.assertEqual(sentinel.read_text(), 'must-not-change')
 
     def test_base_images_must_all_be_pinned(self):
         pinned = ('FROM example@sha256:' + 'a' * 64 + '\n') * 3

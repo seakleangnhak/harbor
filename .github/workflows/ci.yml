@@ -50,7 +50,7 @@ jobs:
           docker run --rm --network none --read-only --user "$(id -u):$(id -g)" \
             --memory 6g --memory-swap 6g --cpus 2 --pids-limit 512 \
             --cap-drop ALL --security-opt no-new-privileges \
-            --tmpfs /tmp:rw,nosuid,nodev,mode=1777,size=4g \
+            --tmpfs /tmp:rw,exec,nosuid,nodev,mode=1777,size=4g \
             --volume "$GITHUB_WORKSPACE:/src:ro" \
             --volume "$(go env GOPATH)/bin/actionlint:/usr/local/bin/actionlint:ro" \
             --volume "$HOME/.cache/go-build:/cache" \
