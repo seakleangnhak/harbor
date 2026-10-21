@@ -1,5 +1,9 @@
 # Progress
 
+## v1.2.1 — PDF cancellation correction; qualification pending
+
+Documentation-only CI 39657728596 found a real intermittent PDF.js cancellation contract defect after the earlier v1.2.0 checks passed. Both bounded text-stream cancellation calls now pass the required `Error`; four repeated PDF open/zoom/close cycles and strict uncaught-error stack diagnostics guard the regression. No preview redesign or broad lifecycle refactor. v1.2.0 remains immutable; current source/defaults target the corrective 1.2.1 image. Go cache keys now depend on `go.sum`/toolchain inputs rather than unrelated Docker version edits. Fresh hosted qualification is required before tagging. [Patch evidence](RELEASE_1.2.1.md).
+
 ## v1.2.0 — CI/CD, release and registry qualification PASS
 
 Owner authorized sanitized-source push, a new version and GHCR image publication. Version 1.2.0 includes preview, staged client transport, account/settings and minimal-environment changes. Original private repository/runtime data and historical tags remain preserved. Existing source repository is private; owner API confirms the existing public package belongs to this repository and matches the pinned identity. No visibility change or remote application deployment.

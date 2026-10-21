@@ -1,6 +1,6 @@
 # GitHub and GHCR release guide
 
-Release source: **v1.2.0**; [current qualification](RELEASE_1.2.0.md) records actual execution/publication status. [v1.1.0 receipt](RELEASE_1.1.0.md) and [v1.0.1 receipt](GHCR_RELEASE_REPORT.md) remain historical. No historical tag/image is overwritten.
+Release source: **v1.2.1**; [current qualification](RELEASE_1.2.1.md) records actual execution/publication status. [v1.1.0 receipt](RELEASE_1.1.0.md) and [v1.0.1 receipt](GHCR_RELEASE_REPORT.md) remain historical. No historical tag/image is overwritten.
 
 Owner API preflight found the existing GHCR package **public** and linked to this repository; the source repository remains **private**. This release does not change either visibility. `HARBOR_GHCR_PACKAGE_ID` pins the existing package; `HARBOR_GHCR_PACKAGE_VISIBILITY=public` pins its observed state. Forks default to private. Recheck linkage and visibility with the owner API before each release; a different/invalid value fails closed.
 
@@ -27,7 +27,7 @@ Owner API preflight found the existing GHCR package **public** and linked to thi
 
 The gate rejects branch refs, prereleases, malformed tags, lightweight tags, historical v1.0.0, mismatched input/ref/commit, source outside `origin/main`, and a version older than another stable tag. It accepts no user-supplied registry, image name, build context or arbitrary Docker tag. Manual dispatch cannot turn `main` into a release. Repository rules remain necessary: maintainers who can modify a publishing workflow are trusted.
 
-For repository `OWNER/REPOSITORY`, image is `ghcr.io/<lowercase-owner>/harbor`. This repository publishes `ghcr.io/seakleangnhak/harbor`. Stable **v1.2.0** produces exactly `1.2.0`, `1.2` and `latest`. There is no automatic major `1` tag. Only stable successful releases update aliases; older patch backports are rejected by this workflow to prevent moving `latest` backward.
+For repository `OWNER/REPOSITORY`, image is `ghcr.io/<lowercase-owner>/harbor`. This repository publishes `ghcr.io/seakleangnhak/harbor`. Stable **v1.2.1** produces exactly `1.2.1`, `1.2` and `latest`. There is no automatic major `1` tag. Only stable successful releases update aliases; older patch backports are rejected by this workflow to prevent moving `latest` backward.
 
 ## Current and future releases
 
@@ -78,7 +78,7 @@ python3 scripts/release.py --ref v1.1.0 --version 1.1.0 \
 (cd output/releases/v1.1.0-arm64 && shasum -a 256 -c SHA256SUMS)
 ```
 
-Repeat with `linux/amd64` and separate output/image names. `--version` injects diagnostics and OCI version metadata; the current source default is 1.2.0. CI compares two Go binary outputs using a shared compilation cache; this checks output equality, not independent cold compilation. Multiarch index/attestation bytes and registry tags are different artifacts from the historical single-platform v1.0.0 image.
+Repeat with `linux/amd64` and separate output/image names. `--version` injects diagnostics and OCI version metadata; the current source default is 1.2.1. CI compares two Go binary outputs using a shared compilation cache; this checks output equality, not independent cold compilation. Multiarch index/attestation bytes and registry tags are different artifacts from the historical single-platform v1.0.0 image.
 
 ## Older release, without changing history
 

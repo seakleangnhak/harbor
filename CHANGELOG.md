@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.1 — 2026-10-22
+
+- Pass the required `Error` reason when cancelling PDF.js text streams. This prevents late worker messages from enqueueing or closing an already cancelled native stream, observed intermittently in WebKit after v1.2.0 qualification.
+- Add repeated PDF open/zoom/close regression coverage and retain uncaught-error stack diagnostics; no error filtering or preview redesign.
+- Key Go compilation caching on `go.sum` and toolchain version, so unrelated Docker image-version edits no longer invalidate the cache. Go retains its own source/build-flag cache validation.
+- Historical v1.2.0 tag and image remain immutable. [Patch qualification](docs/RELEASE_1.2.1.md) records actual status.
+
 ## 1.2.0 — 2026-10-22
 
 - Resumable 4 MiB browser upload parts with individual checksums and encrypted staging; Telegram storage chunks remain 100 MiB. Progress distinguishes sending, durable acceptance, remote saving and final verification. Accepted parts survive retry/reload/restart; recovery archives omit unfinished parts, which require the original file to resend.

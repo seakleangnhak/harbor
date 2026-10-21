@@ -2,7 +2,7 @@
 
 Use **Docker Compose** mode with [compose.dokploy.yaml](../compose.dokploy.yaml). Harbor v1.1.0 adds browser setup: supply one bootstrap token, deploy, then choose your owner password and connect Telegram in the web UI. No `init`, generated-password command or terminal Telegram login is needed for a fresh drive. The template pulls the release image for AMD64/ARM64 and routes through Dokploy HTTPS to service `drive`, port `8080`; it publishes no host port.
 
-Use the [v1.2.0 release report](RELEASE_1.2.0.md) for actual registry checks and the verified immutable digest before rollout. Registry qualification does not establish a successful deployment to your own server.
+Use the [v1.2.1 release report](RELEASE_1.2.1.md) for actual registry checks and the verified immutable digest before rollout. Registry qualification does not establish a successful deployment to your own server.
 
 Harbor is qualified for local personal use, without an independent security audit or public-internet security qualification. Prefer VPN or restricted access even with HTTPS.
 

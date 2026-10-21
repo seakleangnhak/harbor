@@ -1,7 +1,7 @@
-# Harbor v1.2.0. Configure HTTPS for service drive, container port 8080, in Dokploy.
+# Harbor v1.2.1. Configure HTTPS for service drive, container port 8080, in Dokploy.
 services:
   drive:
-    image: ghcr.io/seakleangnhak/harbor:1.2.0
+    image: ghcr.io/seakleangnhak/harbor:1.2.1
     command: ["serve"]
     restart: unless-stopped
     environment:

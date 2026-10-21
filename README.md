@@ -10,7 +10,7 @@
 <p align="center">A self-hosted, single-owner cloud drive with encrypted Telegram storage,<br>resumable transfers, and a thoughtful file manager.</p>
 
 <p align="center">
-  <a href="https://github.com/seakleangnhak/harbor/releases/tag/v1.2.0"><img src="https://img.shields.io/badge/release-v1.2.0-244c68?style=flat-square" alt="Harbor v1.2.0 release"></a>
+  <a href="https://github.com/seakleangnhak/harbor/releases/tag/v1.2.1"><img src="https://img.shields.io/badge/release-v1.2.1-244c68?style=flat-square" alt="Harbor v1.2.1 release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-426f65?style=flat-square" alt="MIT license"></a>
   <a href="docs/KNOWN_LIMITATIONS.md"><img src="https://img.shields.io/badge/scope-private_personal_use-576776?style=flat-square" alt="Qualified for private personal use"></a>
 </p>
@@ -32,7 +32,7 @@
 
 ## Your workspace, on your terms
 
-Distribution uses a [reviewed source snapshot](docs/PUBLIC_REPOSITORY_PLAN.md); original private development history and runtime data are excluded. **v1.2.0** adds smaller resumable browser parts, repaired previews and owner account settings, preserving 100 MiB encrypted Telegram chunks. [Release qualification](docs/RELEASE_1.2.0.md) records checks and publication status; [v1.1.0 evidence](docs/RELEASE_1.1.0.md) remains historical.
+Distribution uses a [reviewed source snapshot](docs/PUBLIC_REPOSITORY_PLAN.md); original private development history and runtime data are excluded. **v1.2.1** adds smaller resumable browser parts, repaired previews and owner account settings, preserving 100 MiB encrypted Telegram chunks. [Release qualification](docs/RELEASE_1.2.1.md) records checks and publication status; [v1.1.0 evidence](docs/RELEASE_1.1.0.md) remains historical.
 
 Harbor keeps your file organization and encryption keys on a host you control. Telegram holds authenticated, encrypted chunks; a lightweight Go server connects them to a familiar file manager. A local storage adapter runs the same flow without Telegram credentials, making development and recovery testing practical.
 
@@ -83,7 +83,7 @@ docker compose -p harbor-local ps
 
 Open **[http://127.0.0.1:8080](http://127.0.0.1:8080)**. Paste the setup token, choose your own owner password, and follow the storage setup. Telegram uses an in-browser QR and optional two-step password. No `init`, `password`, or terminal Telegram command is needed for a new installation. Keep the token private; it prevents another visitor from claiming setup.
 
-Compose pulls `ghcr.io/seakleangnhak/harbor:1.2.0`, publishes only on loopback, and uses a non-root, read-only container. To build audited source instead, use `docker compose -p harbor-local up -d --build`. Set `HARBOR_IMAGE` to an independently verified digest for an immutable deployment. SQLite, encryption key, owner credentials and Telegram session remain in the persistent `harbor-local_drive-data` volume. Keep the same Compose project name for later restarts. **Do not use `docker compose down -v` on a drive you want to keep.** Use `DRIVE_PORT` in your environment to change the host port. Existing initialized volumes keep their original login and storage.
+Compose pulls `ghcr.io/seakleangnhak/harbor:1.2.1`, publishes only on loopback, and uses a non-root, read-only container. To build audited source instead, use `docker compose -p harbor-local up -d --build`. Set `HARBOR_IMAGE` to an independently verified digest for an immutable deployment. SQLite, encryption key, owner credentials and Telegram session remain in the persistent `harbor-local_drive-data` volume. Keep the same Compose project name for later restarts. **Do not use `docker compose down -v` on a drive you want to keep.** Use `DRIVE_PORT` in your environment to change the host port. Existing initialized volumes keep their original login and storage.
 
 For plain `docker run`, HTTPS/Dokploy configuration, persistent state and troubleshooting, use the [web onboarding guide](docs/WEB_ONBOARDING.md).
 
@@ -191,7 +191,7 @@ flowchart LR
 
 New uploads use independent **100 MiB** AES-256-GCM chunks with fresh nonces and authenticated chunk identities. Existing 4 MiB files and resumable uploads keep their recorded geometry. This is a chunk size, not a total-file cap; the existing API ceiling remains 1 TiB. SQLite stores ordered chunk references and SHA-256 digests. Finalization verifies the complete file before publishing its metadata. Downloads authenticate whole chunks before releasing plaintext, then support HTTP byte ranges for PDF/video seeking. Larger chunks can increase first-preview latency. Metadata changes do not rewrite file content.
 
-Version 1.2.0 separates browser transport from storage: resumable **4 MiB** client parts stage encrypted on disk, then commit as one **100 MiB** Telegram chunk (plus its existing 32-byte encryption envelope). Live sent progress, server acceptance and Telegram saving are separate states. Part retries resend at most 4 MiB; a failed storage commit retains accepted parts for retry. Pause/reload resumes from server state after reselecting the original file. Pending parts need temporary local disk space of up to one storage chunk per upload and are omitted from recovery archives; after restore, resume resends those missing parts.
+Version 1.2.1 separates browser transport from storage: resumable **4 MiB** client parts stage encrypted on disk, then commit as one **100 MiB** Telegram chunk (plus its existing 32-byte encryption envelope). Live sent progress, server acceptance and Telegram saving are separate states. Part retries resend at most 4 MiB; a failed storage commit retains accepted parts for retry. Pause/reload resumes from server state after reselecting the original file. Pending parts need temporary local disk space of up to one storage chunk per upload and are omitted from recovery archives; after restore, resume resends those missing parts.
 
 One modular monolith serves UI/API and durable copy jobs. No Redis, external worker or object-storage service is required. Stack: Go/Chi, SQLite WAL, gotd/td, React, TypeScript, Vite, Tailwind CSS, Radix/shadcn primitives and TanStack Query/Virtual. [Architecture](docs/ARCHITECTURE.md) · [API contract](docs/API_CONTRACT.md).
 
@@ -267,7 +267,7 @@ For reproducible local packaging, `scripts/release.py` builds an explicit truste
 
 Small, focused contributions with meaningful verification are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), the [Code of Conduct](CODE_OF_CONDUCT.md), and [security policy](SECURITY.md) first. Use generated fixtures; never attach private files, credentials or real installation screenshots.
 
-Release source: **v1.2.0**; see [qualification status](docs/RELEASE_1.2.0.md). Historical tags stay immutable. Every image release requires successful main CI for the exact commit and delivered-image verification. [Changelog](CHANGELOG.md) · [publishing guide](docs/GHCR_PUBLISHING_GUIDE.md) · [open-source readiness](docs/OPEN_SOURCE_READINESS_REPORT.md).
+Release source: **v1.2.1**; see [qualification status](docs/RELEASE_1.2.1.md). Historical tags stay immutable. Every image release requires successful main CI for the exact commit and delivered-image verification. [Changelog](CHANGELOG.md) · [publishing guide](docs/GHCR_PUBLISHING_GUIDE.md) · [open-source readiness](docs/OPEN_SOURCE_READINESS_REPORT.md).
 
 Future work is driven by verified needs: legitimate live cross-DC qualification, broader browser/accessibility testing, recovery automation and independent security review. These are directions, not delivery promises.
 

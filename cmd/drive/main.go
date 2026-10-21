@@ -23,7 +23,7 @@ import (
 	"private-drive/internal/storage"
 )
 
-var buildVersion = "1.2.0"
+var buildVersion = "1.2.1"
 
 func main() {
 	if err := run(); err != nil {

@@ -92,12 +92,12 @@ export default function PdfPreview({ id, name }: { id: string; name: string }) {
       } catch {
         if (!cancelled) setPageText('Page text unavailable. Download the original PDF to read its text.')
       } finally {
-        await reader.cancel().catch(() => {})
+        await reader.cancel(new Error('PDF text extraction cancelled')).catch(() => {})
         reader.releaseLock()
         textReader = undefined
       }
     }).catch(error => { if (!cancelled) { setError(errorMessage(error)); setLoading(false) } })
-    return () => { cancelled = true; render?.cancel(); void textReader?.cancel().catch(() => {}) }
+    return () => { cancelled = true; render?.cancel(); void textReader?.cancel(new Error('PDF preview changed')).catch(() => {}) }
   }, [document, pageNumber, width, height, zoom, fit])
 
   useEffect(() => setPageDraft(String(pageNumber)), [pageNumber])

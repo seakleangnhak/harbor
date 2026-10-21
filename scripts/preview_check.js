@@ -12,7 +12,8 @@ async (page) => {
   const button = name => page.getByRole('button', { name, exact: true })
   const close = async () => { await button('Close dialog').click(); await page.getByRole('dialog').waitFor({ state: 'hidden' }) }
   const watch = request => { const match = new URL(request.url()).pathname.match(/^\/api\/v1\/nodes\/([^/]+)\/content$/); if (match && request.method() === 'GET') requests.set(match[1], (requests.get(match[1]) || 0) + 1) }
-  const error = cause => pageErrors.push(cause.message)
+  let activePreview = 'grid'
+  const error = cause => pageErrors.push(`${activePreview}: ${cause.stack || cause.message}`)
   const consoleError = message => { if (message.type() === 'error') consoleErrors.push(message.text()) }
   const ranged = response => { if (new URL(response.url()).pathname.endsWith('/content') && response.request().headers()['range']) ranges.push({ id: new URL(response.url()).pathname.split('/')[4], status: response.status() }) }
   let axeChecks = 0, videoResult = 'NOT TESTED', videoDuration = 0, movResult = 'NOT TESTED', thumbnailPeakRequests = 0
@@ -111,7 +112,7 @@ async (page) => {
   page.on('request', watch); page.on('response', ranged); page.on('pageerror', error); page.on('console', consoleError)
   const enter = async () => { await button(folder.name).click(); await page.getByRole('heading', { name: folder.name, exact: true }).waitFor(); await button('Grid view').click() }
   const goRoot = () => page.getByRole('navigation', { name: 'Folder breadcrumb', exact: true }).getByRole('button', { name: 'My drive', exact: true }).click()
-  const open = async node => { await button(node.name).click(); await page.getByRole('dialog', { name: node.name, exact: true }).waitFor() }
+  const open = async node => { activePreview = node.name; await button(node.name).click(); await page.getByRole('dialog', { name: node.name, exact: true }).waitFor() }
   const decoded = () => page.waitForFunction(() => { const image = document.querySelector('img.image-canvas'); return image?.complete && image.naturalWidth > 0 && getComputedStyle(image).visibility !== 'hidden' })
   try {
     await page.setViewportSize({ width: 1440, height: 900 }); await page.emulateMedia({ reducedMotion: 'reduce' })
@@ -179,6 +180,13 @@ async (page) => {
     await page.locator('.pdf-canvas-scroll[aria-busy="false"]').waitFor()
     await page.locator('.pdf-canvas-scroll .sr-only').filter({ hasText: 'Harbor preview verification' }).waitFor()
     await shot('pdf-desktop-light'); await close(); passed.push('generated generic-MIME PDF canvas, accessible text, zoom and fit-page rerender')
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await open(pdf)
+      await page.locator('.pdf-canvas-scroll[aria-busy="false"]').waitFor()
+      await button('Zoom in PDF').click(); await button('Zoom out PDF').click()
+      await close()
+    }
+    passed.push('four repeated PDF open/zoom/close cycles cancel active rendering and bounded text extraction without uncaught errors')
     for (const [node, guidance] of [[heic, 'HEIC/HEIF support varies'], [mov, 'MOV playback depends']]) {
       await open(node); await page.getByRole('alert').filter({ hasText: guidance }).waitFor()
       assert(await button('Download original').isVisible(), 'Unsupported format missing download fallback')

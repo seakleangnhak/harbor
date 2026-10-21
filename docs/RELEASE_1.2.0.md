@@ -2,6 +2,8 @@
 
 2026-10-22. **HARBOR_V1_2_RELEASE = PASS** within the synthetic local-adapter scope below. [GitHub release](https://github.com/seakleangnhak/harbor/releases/tag/v1.2.0). Owner authorized sanitized-source push, a new release and GHCR image publication. Original repository, deployment, keys, SQLite, sessions and historical tags remain excluded and preserved. Source repository remains private; existing GHCR package remains public. No visibility change or deployment.
 
+**Post-release finding:** documentation-only CI 39657728596 failed WebKit preview on uncaught stream cancellation errors. Historical passing evidence below is unchanged; v1.2.0 is superseded for this defect by the [v1.2.1 corrective qualification](RELEASE_1.2.1.md). No historical tag or image is overwritten.
+
 ## Scope
 
 - Encrypted resumable 4 MiB browser transport, preserving 100 MiB Telegram storage geometry and existing manifests.

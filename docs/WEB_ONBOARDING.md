@@ -2,7 +2,7 @@
 
 Harbor v1.1.0 can initialize a fresh drive entirely through its web UI: create your owner password, choose storage, and authorize Telegram with QR and optional two-step verification. Existing initialized drives retain their login, files, key, session and storage binding. See the [onboarding UI review](ONBOARDING_UI_REVIEW.md) for current light/dark screenshots and scoped browser qualification.
 
-The v1.2.0 release source uses `ghcr.io/seakleangnhak/harbor:1.2.0`; use its release report to confirm completed image qualification and the immutable digest before deployment. Earlier image `1.0.1` retains terminal setup. Pulling the upstream public package needs no GHCR credentials; private forks may require package-read access.
+The v1.2.1 release source uses `ghcr.io/seakleangnhak/harbor:1.2.1`; use its release report to confirm completed image qualification and the immutable digest before deployment. Earlier image `1.0.1` retains terminal setup. Pulling the upstream public package needs no GHCR credentials; private forks may require package-read access.
 
 ## Start with Compose
 
@@ -16,7 +16,7 @@ printf 'Setup token: %s\n' "$DRIVE_SETUP_TOKEN"
 
 Open [http://127.0.0.1:8080](http://127.0.0.1:8080). Paste the token into setup; do not put it in a URL, chat, screenshot or issue report. The token authorizes first-run setup, while your chosen owner password authorizes later sign-ins. No `init`, generated-password command, or terminal Telegram authentication is required.
 
-With `--build`, Compose builds the checkout and tags it using `HARBOR_IMAGE`, which defaults to `ghcr.io/seakleangnhak/harbor:1.2.0`. This builds locally; it does not push an image. Compose binds host HTTP to loopback and persists `/data` in `harbor-local_drive-data`. The runtime is non-root with a read-only root filesystem, protected data directory, dropped capabilities, 2 CPU/768 MiB limits and a 512 MiB soft Go memory limit. Compilation needs more memory than the running service.
+With `--build`, Compose builds the checkout and tags it using `HARBOR_IMAGE`, which defaults to `ghcr.io/seakleangnhak/harbor:1.2.1`. This builds locally; it does not push an image. Compose binds host HTTP to loopback and persists `/data` in `harbor-local_drive-data`. The runtime is non-root with a read-only root filesystem, protected data directory, dropped capabilities, 2 CPU/768 MiB limits and a 512 MiB soft Go memory limit. Compilation needs more memory than the running service.
 
 Keep the same Compose project name and volume on later starts:
 
@@ -32,7 +32,7 @@ Do not remove the volume or use `down -v` to troubleshoot an existing drive. Aft
 Use the release image with a fresh named volume; no source build or terminal account setup is needed:
 
 ```sh
-docker pull ghcr.io/seakleangnhak/harbor:1.2.0
+docker pull ghcr.io/seakleangnhak/harbor:1.2.1
 export DRIVE_SETUP_TOKEN="$(openssl rand -hex 32)"
 docker run -d --name harbor-web \
   --publish 127.0.0.1:8080:8080 \
@@ -45,7 +45,7 @@ docker run -d --name harbor-web \
   --security-opt no-new-privileges:true \
   --memory 768m --cpus 2 --pids-limit 128 \
   --restart unless-stopped \
-  ghcr.io/seakleangnhak/harbor:1.2.0
+  ghcr.io/seakleangnhak/harbor:1.2.1
 printf 'Setup token: %s\n' "$DRIVE_SETUP_TOKEN"
 ```
 
@@ -68,7 +68,7 @@ The browser permits credential entry only over HTTPS or loopback HTTP. For remot
 
 Supply a random `DRIVE_SETUP_TOKEN` as a runtime secret/environment variable. Leave owner-password, storage and Telegram variables unset for a fresh browser-driven setup. For an existing initialized installation, preserve its effective variables instead: take an encrypted backup, keep the same volume, adapter, key and Telegram authorization, and stop the old process before replacement. The old Dokploy template hardcoded `DRIVE_STORAGE=telegram`; keep that setting explicitly when upgrading to the optional-variable template. Do not use `VITE_` variables, Docker build arguments, a query string or a public repository for credentials. Ensure proxy request-size/time limits accommodate 100 MiB application chunks and Telegram transfer latency.
 
-The [Dokploy Compose template](../compose.dokploy.yaml) targets v1.2.0 and preserves external volume `harbor-data`. Follow [Dokploy deployment](DOKPLOY.md) for HTTPS, bootstrap-token setup and safe upgrades. This guide does not deploy a server or qualify public-internet security.
+The [Dokploy Compose template](../compose.dokploy.yaml) targets v1.2.1 and preserves external volume `harbor-data`. Follow [Dokploy deployment](DOKPLOY.md) for HTTPS, bootstrap-token setup and safe upgrades. This guide does not deploy a server or qualify public-internet security.
 
 ## Configuration and persistent state
 
@@ -130,4 +130,4 @@ Each chunk must be authenticated before any of its plaintext can be released. A 
 | Final setup cannot save | For a fresh installation, check volume write permissions and conflicting storage/password/Telegram overrides. Do not clear an existing drive's configuration or data. |
 | “Setup saved; Harbor is still starting” | Reload after startup finishes; inspect readiness/secret-safe server diagnostics if it persists. Do not repeat initialization or delete the volume. |
 | Setup does not appear for an old drive | Expected: existing metadata/binding prevents takeover. Sign in using its existing owner account. |
-| New feature missing from a pulled image | Version 1.0.1 predates web onboarding. Check the running image reference against the verified v1.2.0 digest; do not retag an older binary as a newer build. |
+| New feature missing from a pulled image | Version 1.0.1 predates web onboarding. Check the running image reference against the verified v1.2.1 digest; do not retag an older binary as a newer build. |
