@@ -55,4 +55,5 @@ jobs:
           DIGEST: ${{ inputs.digest }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HARBOR_GHCR_PACKAGE_ID: ${{ vars.HARBOR_GHCR_PACKAGE_ID }}
+          HARBOR_GHCR_PACKAGE_VISIBILITY: ${{ vars.HARBOR_GHCR_PACKAGE_VISIBILITY || 'private' }}
         run: python3 scripts/ci_check.py verify-published --tag "$RELEASE_TAG" --digest "$DIGEST"

@@ -71,10 +71,11 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: python3 scripts/release_gate.py
-      - name: Reject public or unrelated existing package
+      - name: Verify owner-approved package identity and visibility
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HARBOR_GHCR_PACKAGE_ID: ${{ vars.HARBOR_GHCR_PACKAGE_ID }}
+          HARBOR_GHCR_PACKAGE_VISIBILITY: ${{ vars.HARBOR_GHCR_PACKAGE_VISIBILITY || 'private' }}
         run: python3 scripts/ci_check.py package-check
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
@@ -132,4 +133,5 @@ jobs:
           HARBOR_VERSION: ${{ needs.gate.outputs.version }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HARBOR_GHCR_PACKAGE_ID: ${{ vars.HARBOR_GHCR_PACKAGE_ID }}
+          HARBOR_GHCR_PACKAGE_VISIBILITY: ${{ vars.HARBOR_GHCR_PACKAGE_VISIBILITY || 'private' }}
         run: python3 scripts/ci_check.py verify-published --tag "v$HARBOR_VERSION" --digest "$DIGEST"

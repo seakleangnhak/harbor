@@ -1,7 +1,7 @@
-# Harbor v1.0.1. Configure HTTPS for service drive, container port 8080, in Dokploy.
+# Harbor v1.1.0. Configure HTTPS for service drive, container port 8080, in Dokploy.
 services:
   drive:
-    image: ghcr.io/seakleangnhak/harbor@sha256:d5c56ecd655e83f298e63f3e97f7df7582aecd9ebdd45b0d6aed6801b36bc855
+    image: ghcr.io/seakleangnhak/harbor:1.1.0
     command: ["serve"]
     restart: unless-stopped
     environment:
@@ -9,13 +9,19 @@ services:
       DRIVE_DATA_DIR: "/data"
       DRIVE_STATIC_DIR: "/app/web/dist"
       DRIVE_ENV_FILE: "-"
-      DRIVE_STORAGE: "telegram"
+      DRIVE_SETUP_TOKEN: ${DRIVE_SETUP_TOKEN:-}
+      DRIVE_STORAGE: ${DRIVE_STORAGE:-}
+      DRIVE_OWNER_PASSWORD: ${DRIVE_OWNER_PASSWORD:-}
+      DRIVE_OWNER_PASSWORD_FILE: ${DRIVE_OWNER_PASSWORD_FILE:-}
+      DRIVE_KEY_FILE: ${DRIVE_KEY_FILE:-}
       DRIVE_SECURE_COOKIES: "true"
       DRIVE_ALLOW_REMOTE_HTTP: "false"
-      TELEGRAM_APP_ID: ${TELEGRAM_APP_ID:?Set TELEGRAM_APP_ID in Environment}
-      TELEGRAM_APP_HASH: ${TELEGRAM_APP_HASH:?Set TELEGRAM_APP_HASH in Environment}
-      USERNAME_OR_CHANNEL_LINK: ${USERNAME_OR_CHANNEL_LINK:?Set USERNAME_OR_CHANNEL_LINK in Environment}
+      TELEGRAM_APP_ID: ${TELEGRAM_APP_ID:-}
+      TELEGRAM_APP_HASH: ${TELEGRAM_APP_HASH:-}
+      TELEGRAM_SESSION_FILE: ${TELEGRAM_SESSION_FILE:-}
+      USERNAME_OR_CHANNEL_LINK: ${USERNAME_OR_CHANNEL_LINK:-}
       TELEGRAM_CHANNEL_ID: ${TELEGRAM_CHANNEL_ID:-}
+      TELEGRAM_CHANNEL_ACCESS_HASH: ${TELEGRAM_CHANNEL_ACCESS_HASH:-}
     expose:
       - "8080"
     volumes:

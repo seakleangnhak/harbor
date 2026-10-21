@@ -131,7 +131,7 @@ def save_state(path, state):
 def load_state(path):
     state = json.loads(path.read_text())
     if (state.get('version') != 1 or not re.fullmatch(r'[0-9a-f]{12}', state.get('run_id', '')) or
-            not ID.fullmatch(state.get('folder_id', '')) or not 1 <= state.get('chunk_size', 0) <= 8 << 20):
+            not ID.fullmatch(state.get('folder_id', '')) or not 1 <= state.get('chunk_size', 0) <= 100 << 20):
         raise QualificationError('Invalid qualification state')
     if set(state.get('files', {})) != {'small.txt', 'small.png', 'small.pdf', 'multipart.bin'}:
         raise QualificationError('Invalid qualification fixture set')
@@ -244,8 +244,8 @@ def run(args):
     if diagnostics.get('adapter') != adapter:
         raise QualificationError(f'Qualification requires {adapter} adapter')
     chunk_size = diagnostics.get('chunk_size', 0)
-    if not 1 <= chunk_size <= 8 << 20:
-        raise QualificationError('Chunk size exceeds controlled qualification workload limit (8 MiB)')
+    if not 1 <= chunk_size <= 100 << 20:
+        raise QualificationError('Chunk size exceeds controlled qualification workload limit (100 MiB)')
     sampler = ProcessSamples(args.server_pid) if args.server_pid else None
     if sampler:
         sampler.thread.start()

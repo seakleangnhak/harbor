@@ -1,94 +1,88 @@
 # Dokploy deployment
 
-Use Docker Compose mode, not Docker Stack. [compose.dokploy.yaml](../compose.dokploy.yaml) pulls the immutable, published v1.0.1 multi-platform image; it does not build source or read local application state. Dokploy supplies HTTPS routing to service `drive`, port `8080`. There is no host-published port.
+Use **Docker Compose** mode with [compose.dokploy.yaml](../compose.dokploy.yaml). Harbor v1.1.0 adds browser setup: supply one bootstrap token, deploy, then choose your owner password and connect Telegram in the web UI. No `init`, generated-password command or terminal Telegram login is needed for a fresh drive. The template pulls the release image for AMD64/ARM64 and routes through Dokploy HTTPS to service `drive`, port `8080`; it publishes no host port.
 
-This guide creates a **new drive**. To migrate existing files, restore a complete encrypted backup using the [operations runbook](PRODUCTION_OPERATIONS.md) instead of initialization. The original database, key, storage binding and Telegram configuration/session are required; pointing an empty installation at the same channel cannot reconstruct the library. Stop the original before using its copied Telegram authorization. Never initialize restored data. If restoring under `/data/restored`, change `DRIVE_DATA_DIR` and `DRIVE_ENV_FILE` in this template to `/data/restored` and `/data/restored/recovery.env` respectively; retain the HTTPS settings.
+The v1.1.0 template is prepared for release qualification. An image reference alone does not establish a successful remote build or deployment; use the release report and its verified digest before rollout.
 
-Harbor remains qualified for personal use, without an independent security audit or public-internet qualification. Prefer VPN or restricted access.
+Harbor is qualified for local personal use, without an independent security audit or public-internet security qualification. Prefer VPN or restricted access even with HTTPS.
 
-## 1. Create Compose service
+## 1. Choose new installation or upgrade
 
-In your Dokploy project, create a **Docker Compose** service. Select **Raw** source and paste `compose.dokploy.yaml`. Keep ordinary Compose mode and one instance. Do not deploy yet. If an earlier Application service uses this same data, stop it before continuing.
-
-In Dokploy **Registry**, add `ghcr.io`, username `seakleangnhak`, and a GitHub classic PAT with `read:packages`; test and save. The package is private. Never put the token in Compose, application environment, build arguments or Git. Make sure the registry credentials are available on the selected deployment server.
-
-In the service's **Environment**, securely copy your existing values for:
-
-```text
-TELEGRAM_APP_ID
-TELEGRAM_APP_HASH
-USERNAME_OR_CHANNEL_LINK
-TELEGRAM_CHANNEL_ID
-```
-
-Use a dedicated account and its owned private channel. No access hash is needed with a private channel link. Compose explicitly passes these variables to the container; Dokploy's Environment editor alone does not inject variables automatically.
-
-## 2. Bootstrap on the deployment server
-
-Use a private SSH terminal on the same server where Dokploy will run this service. Save the same Compose file as `/opt/harbor/compose.yaml`. Save the four configured Telegram values in `/opt/harbor/.env`, with the directory mode `0700` and file mode `0600`. Edit locally on the server; do not paste credentials or QR output into chat, screenshots, deployment logs or Git.
-
-```sh
-sudo install -d -m 0700 /opt/harbor
-sudo nano /opt/harbor/compose.yaml
-sudo nano /opt/harbor/.env
-sudo chmod 600 /opt/harbor/.env
-sudo docker login ghcr.io --username seakleangnhak
-```
-
-At Docker's password prompt, enter the package-read token. This SSH user's Docker login is separate from Dokploy's registry configuration.
-
-The template uses the **external** Docker volume `harbor-data`, keeping the same data across Dokploy and SSH Compose project names. Before a new installation, check whether it already exists:
+For a **new drive**, use a new, empty persistent volume. The default external volume is named `harbor-data`; it survives changes in Dokploy/SSH Compose project names. On the selected deployment server, inspect it first:
 
 ```sh
 sudo docker volume inspect harbor-data --format '{{.Name}}'
 ```
 
-If it exists, establish which installation owns it before proceeding. Do not initialize existing drive data. For a separate installation, choose an unused name and change `volumes.harbor-data.name` in both Compose copies. Do not reuse a bind directory prepared for a previous deployment accidentally.
-
-For a new, unused volume name:
+If it exists, establish which installation owns it. Do not initialize, delete or reuse an existing drive's volume for an unrelated installation. For a new unused volume name:
 
 ```sh
 sudo docker volume create harbor-data
-sudo docker compose -f /opt/harbor/compose.yaml --env-file /opt/harbor/.env config --quiet
-sudo docker compose -f /opt/harbor/compose.yaml --env-file /opt/harbor/.env pull drive
-sudo docker compose -f /opt/harbor/compose.yaml --env-file /opt/harbor/.env run --rm --no-deps drive init
-sudo docker compose -f /opt/harbor/compose.yaml --env-file /opt/harbor/.env run --rm --no-deps drive telegram-setup-qr
-sudo docker compose -f /opt/harbor/compose.yaml --env-file /opt/harbor/.env run --rm --no-deps drive password
 ```
 
-Scan the QR through Telegram **Settings → Devices → Link Desktop Device** on the dedicated account. Complete any two-step password privately in this terminal. The last command displays Harbor's generated owner password. Save it securely. These commands require an interactive terminal; do not use `-T` or pipe their output.
+To create a separate drive, choose an unused name and change `volumes.harbor-data.name` in the template. The named volume inherits the image's protected `/data` ownership, UID/GID `65532:65532`, and mode `0700`. Do not use `volume-nocopy`, root execution or `chmod 777`. The image is distroless and has no shell.
 
-The image's non-root UID/GID is `65532:65532`. An empty named volume inherits `/data` mode `0700` and ownership from the image. Secret files are `0600`. Do not use `chmod 777`, `volume-nocopy`, root execution or a shell entrypoint. The image is distroless and has no shell.
+For an **existing installation**, make a complete encrypted backup before upgrading and preserve the same volume, key, database, storage binding and Telegram session. Keep its effective `DRIVE_STORAGE` and Telegram configuration in Dokploy Environment; the old template hardcoded `DRIVE_STORAGE=telegram`, so preserve that setting explicitly when replacing it. Retain existing owner/key/session overrides where used. The new template forwards optional legacy variables but does not infer an old account's settings. Do not blindly clear overrides or supply new credentials. An initialized drive opens its existing login and cannot be reclaimed through setup. New uploads use 100 MiB chunks; existing 4 MiB files and unfinished uploads keep their geometry.
 
-Do not start `serve` or run `compose up` through SSH; Dokploy owns the long-running service. Never run another server or Telegram setup concurrently against the same state.
+To migrate from another installation, restore a complete encrypted backup using [Production operations](PRODUCTION_OPERATIONS.md), then point this service at the restored state. An empty installation cannot reconstruct your library merely by pointing at the same Telegram channel. If restored under `/data/restored`, set `DRIVE_DATA_DIR=/data/restored` and `DRIVE_ENV_FILE=/data/restored/recovery.env` in the template and keep the HTTPS settings. Never initialize restored state. Stop the original before any restored process uses its copied Telegram authorization.
+
+## 2. Configure Dokploy
+
+In your Dokploy project, create a **Docker Compose** service with **Raw** source and paste the template. Keep ordinary Compose mode and one instance. Stop any earlier Application/Compose service using the same data before deploying this one.
+
+The upstream [GHCR package](https://github.com/users/seakleangnhak/packages/container/package/harbor) is public; pulling it needs no GHCR credential. A private fork or privately scoped package may require a Dokploy Registry entry with package-read credentials. Never put registry tokens in Compose, application environment, build arguments or Git.
+
+For a **fresh installation**, generate a private random token on a trusted machine:
+
+```sh
+openssl rand -hex 32
+```
+
+Save it securely in the service's **Environment** as `DRIVE_SETUP_TOKEN`. Leave storage, owner-password and Telegram variables absent/empty so the browser can set them. Do not share the token in chat, screenshots, issues or URLs. It is a first-run authorization secret, not your eventual owner password. Dokploy Environment values reach the container through the template's explicit interpolation.
+
+For an **upgrade**, retain existing values instead. The template accepts these optional legacy overrides:
+
+```text
+DRIVE_STORAGE
+DRIVE_OWNER_PASSWORD
+DRIVE_OWNER_PASSWORD_FILE
+DRIVE_KEY_FILE
+TELEGRAM_APP_ID
+TELEGRAM_APP_HASH
+TELEGRAM_SESSION_FILE
+USERNAME_OR_CHANNEL_LINK
+TELEGRAM_CHANNEL_ID
+TELEGRAM_CHANNEL_ACCESS_HASH
+```
+
+Use a private channel link or the legacy numeric ID/access-hash pair, never both. File overrides refer to protected paths inside the mounted data volume; retain their files and permissions. A bootstrap token is unnecessary for initialized state.
 
 ## 3. Add HTTPS and deploy
 
-In Dokploy's **Domains**, add your domain and select service `drive`, container port `8080`, and HTTPS with a valid certificate. Configure DNS to reach your server. Keep browser and API on the same origin; secure cookies require HTTPS. Do not add a host `ports` mapping.
+In **Domains**, add your domain, select service `drive`, container port `8080`, and enable HTTPS with a valid certificate. Configure DNS to reach the deployment server. Keep browser and API on the same origin; credential entry and secure cookies require HTTPS for remote access. Do not add a host `ports` mapping.
 
-Use **Preview Compose** to verify Dokploy added the proxy labels/network, preserved the external volume name, and retained one replica. Do not share the rendered preview: it may contain interpolated secrets. Click **Deploy** after setup has finished.
+Configure proxy request-size limits to accept at least a 100 MiB request body, plus any proxy overhead, and timeouts long enough for Telegram transfer latency. Chunk processing can take several minutes on slow connections; the Telegram operation deadline is bounded to ten minutes. The server authenticates a whole chunk before releasing plaintext, so a small preview can wait for a full 100 MiB fetch.
 
-Ordinary Compose recreates this single service; do not scale it or enable overlapping blue/green deployments. If using any custom rollout mechanism, stop the old instance before starting its replacement and allow at least 20 seconds for shutdown.
+Use **Preview Compose** to check proxy labels/network, external volume `harbor-data`, runtime variables and one replica. Do not share the rendered preview; it may contain interpolated secrets. Click **Deploy**.
+
+For a new drive, open the HTTPS domain, paste its setup token, create your owner password, and choose local or Telegram storage. Telegram setup accepts your API ID/hash and owned private channel link, then displays a QR for **Telegram Settings → Devices → Link Desktop Device**. Approve through your dedicated account, enter any two-step password only in Harbor's protected form, and wait for private-channel verification. Finish setup and sign in using your chosen password. See [Browser onboarding](WEB_ONBOARDING.md) for details.
+
+An existing drive should show its usual login. If readiness fails after upgrading, preserve the volume and review effective configuration; do not delete data or run initialization.
+
+Ordinary Compose must stop the previous service before starting its replacement. Do not scale, enable overlapping blue/green deployment or run a second process against this volume/session. Allow at least 20 seconds for shutdown.
 
 ## 4. Verify and maintain
 
-1. Confirm Dokploy reports the image's built-in `/app/drive health` check healthy. There is no `curl` or shell inside the image.
-2. Check `/health` and `/ready` through the HTTPS domain, then sign in and confirm Telegram status is connected.
-3. Upload a small generated file, download it, and compare SHA-256 locally.
-4. Redeploy and confirm the same file remains downloadable with the same checksum.
-5. Maintain encrypted off-host backups using Harbor's recovery CLI. Telegram backups preserve metadata/key/session and remote references; they do not independently mirror Telegram content.
+1. Confirm the built-in `/app/drive health` check becomes healthy. `/health` also succeeds during onboarding; `/ready` returns 503 until setup and normal storage startup finish. No `curl` or shell exists inside the image.
+2. After setup/login, check `/ready` through HTTPS and confirm Telegram status is connected when selected.
+3. Upload a small generated file, download it and compare SHA-256 locally.
+4. Redeploy, then confirm the same file remains downloadable with the same checksum.
+5. Keep encrypted off-host backups using [Production operations](PRODUCTION_OPERATIONS.md). Telegram backups preserve metadata, key, session and remote references; they do not independently mirror Telegram content.
 
-Never remove `harbor-data`, use `docker volume prune` without reviewing its scope, or restore over existing data. Protect both Dokploy's runtime environment files and `/opt/harbor/.env`. Reauthorization requires stopping the service and repeating only the QR setup command, never `init`.
-
-Changing this deployment file does not rebuild or change the v1.0.1 release. Future upgrades should use an approved tested image digest, a fresh encrypted backup, and the same persistent volume.
+Never remove `harbor-data`, use `down -v` or apply `docker volume prune` without reviewing its scope. Protect Dokploy's runtime environment files. Preserve current image digest and configuration alongside a pre-upgrade backup for rollback. Changes to setup inputs after initialization do not reset the owner or change the bound channel.
 
 ## Verification scope
 
-Local checks on 2026-10-21:
-
-- **PASS:** `docker compose --env-file /dev/null -f compose.dokploy.yaml config --format json` with synthetic variables; immutable image pin, external volume, one replica, explicit runtime interpolation, missing required-variable rejection, and no host port/build context.
-- **PASS:** isolated ordinary Compose run against published ARM64 child `sha256:bd7023f048e49a5439e8c8e309b621ce4b686db9dbed0e693ca2de6ed06278ca`, using a unique disposable volume, local adapter and loopback HTTP test override. Fresh `init`, readiness/health, 68,200-byte encrypted upload/download with SHA-256 equality, Range, unauthenticated rejection, restart, forced container recreation, private file modes and exit-code-zero shutdown passed. Test objects were removed.
-- **PASS:** separately precreated empty external volume inherited image ownership/modes under read-only filesystem, dropped capabilities and no-new-privileges.
-- **NOT TESTED:** deployment to your Dokploy server, HTTPS issuance and live Telegram connectivity on that server. No credentials or original application state were used in these tests.
+Earlier v1.0.1 checks verified isolated local-adapter checksums, Range, authentication rejection, restart, forced recreation and private file permissions on ARM64. They do not qualify this newer image. Browser onboarding and 100 MiB compatibility have separate [source qualification evidence](WEB_ONBOARDING_REPORT.md) and [UI evidence](ONBOARDING_UI_REVIEW.md). New-image and registry results belong in the current release report. Deployment to your Dokploy server, HTTPS issuance and live Telegram operation on that server require their own checks; this guide performs none of them.
 
 References: [Dokploy Compose](https://docs.dokploy.com/docs/core/docker-compose), [Compose domains](https://docs.dokploy.com/docs/core/docker-compose/domains).

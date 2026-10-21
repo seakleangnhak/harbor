@@ -1,12 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-10-21
 
-- Guarded first-run browser onboarding: choose an owner password, configure local/Telegram storage, approve Telegram QR/two-step authorization and persist private setup across restarts. Source Compose/container startup no longer needs terminal initialization for fresh drives.
-- New encrypted chunks use 100 MiB with bounded shared buffers and compatible 4 MiB manifests; recovery and frontend transfer bounds follow persisted geometry. Larger chunks can increase preview latency.
-- Local process/browser, restart/resume and encrypted-restore qualification passed. New live Telegram web authentication and exact release-image qualification remain pending; published 1.0.1 is unchanged.
-- Correct workflow-token package validation when GHCR omits repository metadata: private visibility plus owner-verified immutable package-ID continuity, with explicit owner linkage checks.
-- Read-only verification of an existing annotated release/index, platform attestations and pulled-image smoke without rebuilding or changing version tags. These fixes are on main after immutable v1.0.1.
+- First-run browser onboarding for owner-chosen password, local/Telegram storage, QR and optional two-step authorization; protected setup token, same-origin checks and private atomic configuration persistence. Existing initialized drives keep their state.
+- Refined responsive onboarding with light/dark themes, accessible state feedback and active Telegram setup recovery after reload.
+- New uploads use 100 MiB encrypted chunks with two shared buffer slots and in-place authenticated encryption; existing 4 MiB manifests and incomplete uploads remain compatible. Small previews/Range requests may need one full chunk before output.
+- Compose image startup and updated Dokploy browser setup instructions; coherent runtime/OCI/frontend version defaults.
+- Exact-image smoke now checks guarded web setup plus legacy initialization, encrypted multipart integrity, interrupted-upload resume, restart and container recreation. Controlled qualification helpers accept the current chunk ceiling.
+- Release guard pins expected GHCR visibility alongside package identity. No registry visibility changes; publication still requires owner-only stable tag and full CI. Read-only immutable-image verification retains platform, attestation, label and checksum checks.
+- [Qualification and limitations](docs/RELEASE_1.1.0.md). Live browser Telegram setup/new 100 MiB Telegram throughput and live cross-datacenter retrieval require separate verification; no new independent security-audit or public-internet claim.
 
 ## 1.0.1 — 2026-10-21
 

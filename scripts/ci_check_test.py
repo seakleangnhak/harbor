@@ -34,6 +34,7 @@ class CICheckTest(unittest.TestCase):
                          publish.replace('python3 scripts/ci_check.py package-check\n', 'true\n'),
                          publish.replace('python3 scripts/ci_check.py verify-published', 'true'),
                          publish.replace('HARBOR_GHCR_PACKAGE_ID: ${{ vars.HARBOR_GHCR_PACKAGE_ID }}', 'UNAPPROVED: value'),
+                         publish.replace("HARBOR_GHCR_PACKAGE_VISIBILITY: ${{ vars.HARBOR_GHCR_PACKAGE_VISIBILITY || 'private' }}", 'UNAPPROVED: value'),
                          publish + '\n  pull_request:\n',
                          publish + '\n# id-token: write\n',
                          publish + '\n# packages: write\n'):
@@ -101,6 +102,31 @@ class CICheckTest(unittest.TestCase):
                 with self.assertRaises(check.QualificationError):
                     check.package_check(True)
 
+    def test_package_visibility_matches_explicit_owner_policy(self):
+        environment = {'GITHUB_REPOSITORY_OWNER': 'Example-Owner', 'GITHUB_REPOSITORY': 'Example-Owner/harbor',
+                       'GH_TOKEN': 'synthetic-workflow-token', 'HARBOR_GHCR_PACKAGE_ID': '123'}
+        package = {'id': 123, 'name': 'harbor', 'visibility': 'public',
+                   'repository': {'full_name': 'Example-Owner/harbor'}}
+        response = subprocess.CompletedProcess([], 0, 'HTTP/2.0 200\n\n' + json.dumps(package), '')
+        with mock.patch.dict(os.environ, environment, clear=True):
+            with mock.patch.object(check.subprocess, 'run', return_value=response):
+                with self.assertRaises(check.QualificationError):
+                    check.package_check(True)
+            with mock.patch.dict(os.environ, {'HARBOR_GHCR_PACKAGE_VISIBILITY': 'public'}), \
+                    mock.patch.object(check.subprocess, 'run', return_value=response):
+                self.assertEqual(check.package_check(True)['visibility'], 'public')
+                for changed in ({**package, 'visibility': 'private'}, {**package, 'id': 124},
+                                {**package, 'repository': {'full_name': 'Other/harbor'}}):
+                    response.stdout = 'HTTP/2.0 200\n\n' + json.dumps(changed)
+                    with self.assertRaises(check.QualificationError):
+                        check.package_check(True)
+            for value in ('PUBLIC', 'internal', ' public', 'public\n', 'any'):
+                with mock.patch.dict(os.environ, {'HARBOR_GHCR_PACKAGE_VISIBILITY': value}), \
+                        mock.patch.object(check.subprocess, 'run') as request:
+                    with self.assertRaises(check.QualificationError):
+                        check.package_check(True)
+                    request.assert_not_called()
+
     def test_readonly_verifier_workflow_cannot_publish(self):
         ci, publish, verify = [(check.ROOT / '.github/workflows' / name).read_text()
                               for name in ('ci.yml', 'docker-publish.yml', 'verify-published.yml')]
@@ -109,6 +135,7 @@ class CICheckTest(unittest.TestCase):
                         verify.replace("github.ref == 'refs/heads/main'", 'true'),
                         verify.replace('github.actor == github.repository_owner', 'true'),
                         verify.replace('github.triggering_actor == github.repository_owner', 'true'),
+                        verify.replace("HARBOR_GHCR_PACKAGE_VISIBILITY: ${{ vars.HARBOR_GHCR_PACKAGE_VISIBILITY || 'private' }}", 'UNAPPROVED: value'),
                         verify + '\n  push:\n', verify + '\n# docker/build-push-action@\n',
                         verify.replace('verify-published --tag', 'true --tag')):
             with self.subTest(source=changed), self.assertRaises(check.QualificationError):
@@ -202,6 +229,49 @@ class CICheckTest(unittest.TestCase):
         for content in (archive(mode=0o644), archive(missing=True)):
             with self.assertRaises(check.QualificationError):
                 check.validate_private_modes(content)
+
+    def test_web_setup_archive_requires_private_owner_and_config(self):
+        def archive(mode=0o600, missing=False, directory_mode=0o700):
+            data = io.BytesIO()
+            with tarfile.open(fileobj=data, mode='w') as output:
+                setup = tarfile.TarInfo('./setup')
+                setup.type, setup.mode = tarfile.DIRTYPE, directory_mode
+                output.addfile(setup)
+                for name in ('content.key', 'drive.db', 'storage.json', 'setup/owner-password', 'setup/config.env'):
+                    if missing and name == 'setup/config.env':
+                        continue
+                    member = tarfile.TarInfo('./' + name)
+                    member.mode = mode
+                    output.addfile(member)
+            return data.getvalue()
+        check.validate_private_modes(archive(), web_setup=True)
+        for content in (archive(mode=0o644), archive(missing=True), archive(directory_mode=0o755)):
+            with self.assertRaises(check.QualificationError):
+                check.validate_private_modes(content, web_setup=True)
+
+    def test_setup_request_sends_credentials_in_headers_and_bounded_body(self):
+        response = io.BytesIO(b'{"account_ready":true}')
+        response.status = 200
+        with mock.patch.object(check.urllib.request, 'build_opener') as opener:
+            opener.return_value.open.return_value = response
+            self.assertEqual(check.setup_request('http://127.0.0.1:1234', 'POST', '/account',
+                             {'password': 'synthetic-owner-password'}, 'synthetic-setup-token'), {'account_ready': True})
+            request = opener.return_value.open.call_args.args[0]
+            self.assertEqual(request.full_url, 'http://127.0.0.1:1234/api/v1/setup/account')
+            self.assertEqual(request.get_header('X-harbor-setup-token'), 'synthetic-setup-token')
+            self.assertEqual(request.get_header('Origin'), 'http://127.0.0.1:1234')
+            self.assertEqual(json.loads(request.data), {'password': 'synthetic-owner-password'})
+        response = check.urllib.error.HTTPError('http://127.0.0.1:1234/api/v1/setup/account', 404, '', {}, io.BytesIO(b'404 page not found'))
+        with mock.patch.object(check.urllib.request, 'build_opener') as opener:
+            opener.return_value.open.side_effect = response
+            self.assertIsNone(check.setup_request('http://127.0.0.1:1234', 'POST', '/account', {}, expect=404))
+        for status, content in ((401, b'{}'), (200, b'x' * 16385)):
+            response = io.BytesIO(content)
+            response.status = status
+            with mock.patch.object(check.urllib.request, 'build_opener') as opener:
+                opener.return_value.open.return_value = response
+                with self.assertRaises(check.QualificationError):
+                    check.setup_request('http://127.0.0.1:1234', 'POST', '/verify', {})
 
     def test_reproducible_build_compares_both_independent_outputs(self):
         caches = []

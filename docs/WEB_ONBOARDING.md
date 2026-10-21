@@ -1,12 +1,12 @@
 # Browser onboarding
 
-Current source can initialize a fresh Harbor drive entirely through its web UI: create your owner password, choose storage, and authorize Telegram with QR and optional two-step verification. Existing initialized drives retain their login, files, key, session and storage binding. See the [onboarding UI review](ONBOARDING_UI_REVIEW.md) for current light/dark screenshots and scoped browser qualification.
+Harbor v1.1.0 can initialize a fresh drive entirely through its web UI: create your owner password, choose storage, and authorize Telegram with QR and optional two-step verification. Existing initialized drives retain their login, files, key, session and storage binding. See the [onboarding UI review](ONBOARDING_UI_REVIEW.md) for current light/dark screenshots and scoped browser qualification.
 
-**Build this checkout. Published image `ghcr.io/seakleangnhak/harbor:1.0.1` and the pinned `compose.dokploy.yaml` use the earlier terminal setup.** These changes have not been added to that image.
+The v1.1.0 release candidate uses `ghcr.io/seakleangnhak/harbor:1.1.0`; use its release report to confirm completed image qualification and the immutable digest before deployment. Earlier image `1.0.1` retains terminal setup. Pulling the upstream public package needs no GHCR credentials; private forks may require package-read access.
 
 ## Start with Compose
 
-Run from the source checkout on a trusted machine:
+The source Compose file builds the checkout. Run on a trusted machine:
 
 ```sh
 export DRIVE_SETUP_TOKEN="$(openssl rand -hex 32)"
@@ -29,10 +29,10 @@ Do not remove the volume or use `down -v` to troubleshoot an existing drive. Aft
 
 ## Run a container directly
 
-Build the current source, then use a fresh named volume:
+Use the release image with a fresh named volume; no source build or terminal account setup is needed:
 
 ```sh
-docker build -t harbor:local .
+docker pull ghcr.io/seakleangnhak/harbor:1.1.0
 export DRIVE_SETUP_TOKEN="$(openssl rand -hex 32)"
 docker run -d --name harbor-web \
   --publish 127.0.0.1:8080:8080 \
@@ -45,11 +45,11 @@ docker run -d --name harbor-web \
   --security-opt no-new-privileges:true \
   --memory 768m --cpus 2 --pids-limit 128 \
   --restart unless-stopped \
-  harbor:local
+  ghcr.io/seakleangnhak/harbor:1.1.0
 printf 'Setup token: %s\n' "$DRIVE_SETUP_TOKEN"
 ```
 
-The image defaults to UID/GID `65532:65532`, includes its health-check command, and listens on container port 8080. `DRIVE_ALLOW_REMOTE_HTTP=true` allows the container's internal listener; the example still exposes HTTP only on host loopback. Keep `harbor-web-data` across container replacement. Do not mount an initialized drive into two Harbor processes.
+The image defaults to UID/GID `65532:65532`, includes its health-check command, and listens on container port 8080. `DRIVE_ALLOW_REMOTE_HTTP=true` allows the container's internal listener; the example still exposes HTTP only on host loopback. Keep `harbor-web-data` across container replacement. Do not mount an initialized drive into two Harbor processes. Prefer the immutable digest recorded after release qualification for long-lived deployments. To test source instead, build `docker build -t harbor:local .` and substitute `harbor:local` in the run command.
 
 ## Complete setup
 
@@ -66,9 +66,9 @@ The setup token expires for the current process after one hour. Restart an unfin
 
 The browser permits credential entry only over HTTPS or loopback HTTP. For remote access, configure your existing reverse proxy or Dokploy domain with HTTPS and set `DRIVE_SECURE_COOKIES=true`. Keep one application replica and one protected persistent volume at `/data`; route to container port 8080.
 
-Supply a random `DRIVE_SETUP_TOKEN` as a runtime secret/environment variable. Leave owner-password, storage and Telegram variables unset for a fresh browser-driven setup. Do not use `VITE_` variables, Docker build arguments, a query string or a public repository for credentials. Ensure proxy request-size/time limits accommodate 100 MiB application chunks and Telegram transfer latency.
+Supply a random `DRIVE_SETUP_TOKEN` as a runtime secret/environment variable. Leave owner-password, storage and Telegram variables unset for a fresh browser-driven setup. For an existing initialized installation, preserve its effective variables instead: take an encrypted backup, keep the same volume, adapter, key and Telegram authorization, and stop the old process before replacement. The old Dokploy template hardcoded `DRIVE_STORAGE=telegram`; keep that setting explicitly when upgrading to the optional-variable template. Do not use `VITE_` variables, Docker build arguments, a query string or a public repository for credentials. Ensure proxy request-size/time limits accommodate 100 MiB application chunks and Telegram transfer latency.
 
-For this source version, build from the audited checkout in your deployment system or load an image you built yourself. The existing release-pinned Dokploy template must stay on its documented legacy flow until a new image release is approved and published. This guide does not publish an image, expose a server publicly, or qualify public-internet security.
+The [Dokploy Compose template](../compose.dokploy.yaml) targets v1.1.0 and preserves external volume `harbor-data`. Follow [Dokploy deployment](DOKPLOY.md) for HTTPS, bootstrap-token setup and safe upgrades. This guide does not deploy a server or qualify public-internet security.
 
 ## Configuration and persistent state
 
@@ -89,7 +89,7 @@ After verification, Harbor writes a private pending bundle, syncs its files, and
 
 Directories require mode `0700`; secret files require `0600`. The saved config holds the adapter and Telegram API/channel configuration. On restart it fills unset environment values and selects its bundled owner-password/session paths. Keys remain outside SQLite. Do not copy this bundle into Git, browser assets, build contexts or unencrypted backups.
 
-Process environment and a deliberately loaded private `.env` take priority over the saved bundle. During setup, conflicting nonempty storage/password/Telegram overrides are rejected; `DRIVE_OWNER_PASSWORD_FILE`, `TELEGRAM_SESSION_FILE` and a legacy access-hash override also conflict with web setup. Remove stale deployment overrides rather than editing or deleting saved state. Existing drives still fail closed if their key, metadata or immutable adapter/channel binding is missing or mismatched.
+Process environment and a deliberately loaded private `.env` take priority over the saved bundle. During fresh setup, conflicting nonempty storage/password/Telegram overrides are rejected; `DRIVE_OWNER_PASSWORD_FILE`, `TELEGRAM_SESSION_FILE` and a legacy access-hash override also conflict with web setup. Remove conflicting overrides only for an uninitialized browser-driven installation. Preserve existing initialized installations' effective configuration and saved state. Existing drives fail closed if their key, metadata or immutable adapter/channel binding is missing or mismatched.
 
 `/health` reports process liveness during setup. `/ready` returns 503 until normal storage/API startup completes. The public setup-status endpoint reveals only whether setup is required. Protected QR/status responses do not return saved API hashes, private channel selectors or session data. Once initialized, only the normal owner-authenticated API remains available.
 
@@ -127,7 +127,7 @@ Each chunk must be authenticated before any of its plaintext can be released. A 
 | Browser requires HTTPS | Use a configured HTTPS origin or access through local loopback. Do not send credentials over remote plaintext HTTP. |
 | Telegram channel rejected | Check owner account, private type, fresh link, disabled auto-delete/discussion, and optional expected ID. |
 | Telegram code/QR expires | Start a fresh QR attempt. Do not use Telegram test datacenters or trigger repeated login requests. |
-| Final setup cannot save | Check volume write permissions and remove conflicting storage/password/Telegram overrides. |
+| Final setup cannot save | For a fresh installation, check volume write permissions and conflicting storage/password/Telegram overrides. Do not clear an existing drive's configuration or data. |
 | “Setup saved; Harbor is still starting” | Reload after startup finishes; inspect readiness/secret-safe server diagnostics if it persists. Do not repeat initialization or delete the volume. |
 | Setup does not appear for an old drive | Expected: existing metadata/binding prevents takeover. Sign in using its existing owner account. |
-| New feature missing from a pulled image | Version 1.0.1 predates web onboarding. Build current source; do not retag an older image as a newer feature build. |
+| New feature missing from a pulled image | Version 1.0.1 predates web onboarding. Check the running image reference against the verified v1.1.0 digest; do not retag an older binary as a newer build. |

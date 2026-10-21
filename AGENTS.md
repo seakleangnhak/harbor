@@ -12,6 +12,12 @@ Build a private single-owner drive. Keep changes small, inspect existing code, v
 
 ## Contracts and security
 
+### v1.1.0 release ownership override
+
+- Current owner request authorizes scoped cleanup, sanitized-source push, a new annotated release and GHCR publication. Earlier task-specific no-push/no-tag restrictions below are historical. Preserve original development history, v1.0.0, deployment and all private runtime state. No visibility changes or remote application deployment.
+- Coordinator owns version defaults, release docs, integration, commits and remote operations. Release agent owns CI smoke/qualification helpers and their tests. Other agents review onboarding/storage read-only unless ownership is reassigned. Agents never commit or handle real credentials.
+- Run application/tests in isolated no-network containers with clean environments, read-only source/tooling and bounded scratch/resources. Reviewed Docker control harnesses may manage disposable containers through the host CLI; never mount the Docker socket inside target/test sandboxes. Production image builds may fetch pinned dependencies in isolated build stages; never supply runtime secrets or original data to builds, caches or tests.
+
 ### Web onboarding ownership override
 
 - Premium UI follow-up: coordinator owns `Onboarding.tsx`/`onboarding.css`, visual integration and evidence; QA agent owns only `scripts/onboarding_ui_check.js`. Other agents review read-only. Preserve setup API/security behavior and keep all target execution in the isolated fixture sandboxes below.

@@ -10,7 +10,7 @@
 <p align="center">A self-hosted, single-owner cloud drive with encrypted Telegram storage,<br>resumable transfers, and a thoughtful file manager.</p>
 
 <p align="center">
-  <a href="https://github.com/seakleangnhak/harbor/releases/tag/v1.0.1"><img src="https://img.shields.io/badge/release-v1.0.1-244c68?style=flat-square" alt="Harbor v1.0.1 private release"></a>
+  <a href="https://github.com/seakleangnhak/harbor/releases/tag/v1.1.0"><img src="https://img.shields.io/badge/release-v1.1.0-244c68?style=flat-square" alt="Harbor v1.1.0 release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-426f65?style=flat-square" alt="MIT license"></a>
   <a href="docs/KNOWN_LIMITATIONS.md"><img src="https://img.shields.io/badge/scope-private_personal_use-576776?style=flat-square" alt="Qualified for private personal use"></a>
 </p>
@@ -32,13 +32,13 @@
 
 ## Your workspace, on your terms
 
-Distribution starts from a [reviewed source snapshot](docs/PUBLIC_REPOSITORY_PLAN.md). Earlier v1.0.0 reports describe a separate private development history; its commits, tag and local artifacts are not imported. First private GitHub/GHCR release: **[v1.0.1](https://github.com/seakleangnhak/harbor/releases/tag/v1.0.1)**. Tagged CI and independent AMD64/ARM64 registry qualification passed. Original publishing run failed its package-metadata check; follow-up read-only verification passed without changing tag or image. [Exact results and digest](docs/GHCR_RELEASE_REPORT.md). Public visibility requires separate approval. [Earlier main/PR CI](docs/REMOTE_VALIDATION_REPORT.md). [Publication gate](docs/PUBLICATION_GO_NO_GO.md) · [First release](docs/FIRST_GITHUB_RELEASE.md).
+Distribution uses a [reviewed source snapshot](docs/PUBLIC_REPOSITORY_PLAN.md); original private development history and runtime data are excluded. **v1.1.0** adds browser onboarding and 100 MiB encrypted chunks. [Release qualification](docs/RELEASE_1.1.0.md) records exact checks and registry evidence; [v1.0.1 evidence](docs/GHCR_RELEASE_REPORT.md) remains historical.
 
 Harbor keeps your file organization and encryption keys on a host you control. Telegram holds authenticated, encrypted chunks; a lightweight Go server connects them to a familiar file manager. A local storage adapter runs the same flow without Telegram credentials, making development and recovery testing practical.
 
 Built for one owner. No public signup, sharing links, or extra infrastructure to operate. **v1.0.0 passed local personal-use qualification**, including live Telegram, multipart integrity, container recreation, and encrypted restoration into a fresh environment. This is not an independent security audit or public-internet deployment qualification. [Evidence and scope](docs/PHASE6_FINAL_REPORT.md).
 
-**Current source adds browser onboarding and 100 MiB chunks.** Build this checkout to use them. Published image **1.0.1 does not contain these changes**; its qualification reports describe that earlier release.
+**New installations start in the browser.** Supply a private setup token, choose your owner password, then connect Telegram or use local storage. Existing initialized drives retain their key, login, session and stored chunk geometry.
 
 ## What Harbor does
 
@@ -72,35 +72,27 @@ Use a fresh checkout and a trusted local machine. Start Harbor, then create your
 
 ### Docker Compose
 
-Requires Docker with Compose v2 and Buildx. Cold Telegram compilation needs several GiB of RAM; build one architecture at a time on constrained machines. Compose limits the running service to 2 CPUs and 768 MiB. Run from the repository root:
+Requires Docker with Compose v2. Published images support AMD64 and ARM64; no Go or Node installation is needed. Compose limits the running service to 2 CPUs and 768 MiB. Run from the repository root:
 
 ```sh
 export DRIVE_SETUP_TOKEN="$(openssl rand -hex 32)"
-docker compose -p harbor-local up -d --build
+docker compose -p harbor-local up -d --no-build --pull always
 printf 'Setup token: %s\n' "$DRIVE_SETUP_TOKEN"
 docker compose -p harbor-local ps
 ```
 
 Open **[http://127.0.0.1:8080](http://127.0.0.1:8080)**. Paste the setup token, choose your own owner password, and follow the storage setup. Telegram uses an in-browser QR and optional two-step password. No `init`, `password`, or terminal Telegram command is needed for a new installation. Keep the token private; it prevents another visitor from claiming setup.
 
-Compose builds `harbor:local`, publishes only on loopback, and uses a non-root, read-only container. SQLite, encryption key, owner credentials and Telegram session remain in the persistent `harbor-local_drive-data` volume. Keep the same Compose project name for later restarts. **Do not use `docker compose down -v` on a drive you want to keep.** Use `DRIVE_PORT` in your environment to change the host port. Existing initialized volumes keep their original login and storage.
+Compose pulls `ghcr.io/seakleangnhak/harbor:1.1.0`, publishes only on loopback, and uses a non-root, read-only container. To build audited source instead, use `docker compose -p harbor-local up -d --build`. Set `HARBOR_IMAGE` to an independently verified digest for an immutable deployment. SQLite, encryption key, owner credentials and Telegram session remain in the persistent `harbor-local_drive-data` volume. Keep the same Compose project name for later restarts. **Do not use `docker compose down -v` on a drive you want to keep.** Use `DRIVE_PORT` in your environment to change the host port. Existing initialized volumes keep their original login and storage.
 
 For plain `docker run`, HTTPS/Dokploy configuration, persistent state and troubleshooting, use the [web onboarding guide](docs/WEB_ONBOARDING.md).
 
-<details>
-<summary>Earlier published image and existing Dokploy installations</summary>
+### Dokploy and existing drives
 
-The [private GHCR package](https://github.com/users/seakleangnhak/packages/container/package/harbor) version **1.0.1** is available for AMD64 and ARM64, with its original terminal setup and 4 MiB default chunks. It does not support the new onboarding described above. With an already authorized GHCR client:
+Use [compose.dokploy.yaml](compose.dokploy.yaml) with the [Dokploy guide](docs/DOKPLOY.md) for HTTPS routing and browser onboarding. Keep one instance and the existing persistent volume. Before upgrading an initialized drive, create a verified encrypted backup and retain its effective legacy environment configuration; never run initialization again.
 
-```sh
-docker pull ghcr.io/seakleangnhak/harbor@sha256:d5c56ecd655e83f298e63f3e97f7df7582aecd9ebdd45b0d6aed6801b36bc855
-```
+Version 1.0.1 remains available with its older terminal setup and 4 MiB chunks. Version 1.1.0 resumes old uploads and reads existing files without re-encryption. New 100 MiB chunks can increase first-preview/Range latency. [Operations](docs/PRODUCTION_OPERATIONS.md) · [Publishing and image verification](docs/GHCR_PUBLISHING_GUIDE.md).
 
-Version tag `1.0.1`, minor `1.0` and `latest` resolve to this index at release qualification; prefer the digest for deployment. Keep existing volume identity and recovery material when using a trusted-image override. [Operations](docs/PRODUCTION_OPERATIONS.md) · [Publishing and image verification](docs/GHCR_PUBLISHING_GUIDE.md).
-
-The pinned [Dokploy Compose template](compose.dokploy.yaml) and [deployment guide](docs/DOKPLOY.md) still describe that release. Preserve an existing deployment's volume and configuration. A new published image requires a separately approved release; building this checkout does not update GHCR.
-
-</details>
 
 ### Local development
 
@@ -267,7 +259,7 @@ For reproducible local packaging, `scripts/release.py` builds an explicit truste
 
 Small, focused contributions with meaningful verification are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md), the [Code of Conduct](CODE_OF_CONDUCT.md), and [security policy](SECURITY.md) first. Use generated fixtures; never attach private files, credentials or real installation screenshots.
 
-Original local release: **v1.0.0**. First approved automated private GitHub/GHCR release: **v1.0.1**; actual publication requires successful tagged CI and delivered-image verification. Existing tags stay immutable. [Changelog](CHANGELOG.md) · [publishing guide](docs/GHCR_PUBLISHING_GUIDE.md) · [open-source readiness](docs/OPEN_SOURCE_READINESS_REPORT.md).
+Current release: **v1.1.0**. Original v1.0.0 and published v1.0.1 stay immutable. Every image release requires successful tagged CI and delivered-image verification. [Changelog](CHANGELOG.md) · [publishing guide](docs/GHCR_PUBLISHING_GUIDE.md) · [open-source readiness](docs/OPEN_SOURCE_READINESS_REPORT.md).
 
 Future work is driven by verified needs: legitimate live cross-DC qualification, broader browser/accessibility testing, recovery automation and independent security review. These are directions, not delivery promises.
 

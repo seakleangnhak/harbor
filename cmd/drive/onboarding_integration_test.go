@@ -60,7 +60,7 @@ func startWebSetupProcess(t *testing.T, data, config string) *webSetupProcess {
 		t.Fatal(err)
 	}
 	scratch := t.TempDir()
-	command := exec.Command(executable, "-test.run=^TestWebSetupProcessHelper$", "-test.timeout=120s")
+	command := exec.Command(executable, "-test.run=^TestWebSetupProcessHelper$", "-test.timeout=300s")
 	command.Dir = scratch
 	command.Env = []string{
 		"HARBOR_WEB_SETUP_PROCESS_TEST=1", "DRIVE_ENV_FILE=" + config,
@@ -80,8 +80,9 @@ func startWebSetupProcess(t *testing.T, data, config string) *webSetupProcess {
 		t.Fatal(err)
 	}
 	process := &webSetupProcess{command: command, done: make(chan error, 1), base: "http://" + address,
-		client: &http.Client{Jar: jar, Timeout: 30 * time.Second, Transport: &http.Transport{
-			DialContext: (&net.Dialer{Timeout: time.Second}).DialContext, ResponseHeaderTimeout: 10 * time.Second,
+		client: &http.Client{Jar: jar, Timeout: 90 * time.Second, Transport: &http.Transport{
+			// Authenticate a full 100 MiB chunk before Range output, including under -race.
+			DialContext: (&net.Dialer{Timeout: time.Second}).DialContext, ResponseHeaderTimeout: 60 * time.Second,
 			MaxIdleConns: 4, IdleConnTimeout: time.Second,
 		}}}
 	go func() { process.done <- command.Wait() }()

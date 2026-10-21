@@ -66,7 +66,8 @@ def workflow_policy(ci, publish, verification=None):
                 'platforms: linux/amd64,linux/arm64', 'provenance: mode=min', 'sbom: generator=',
                 'python3 scripts/ci_check.py package-check\n',
                 'python3 scripts/ci_check.py verify-published --tag "v$HARBOR_VERSION" --digest "$DIGEST"',
-                'HARBOR_GHCR_PACKAGE_ID: ${{ vars.HARBOR_GHCR_PACKAGE_ID }}')
+                'HARBOR_GHCR_PACKAGE_ID: ${{ vars.HARBOR_GHCR_PACKAGE_ID }}',
+                "HARBOR_GHCR_PACKAGE_VISIBILITY: ${{ vars.HARBOR_GHCR_PACKAGE_VISIBILITY || 'private' }}")
     if not all(text in publish for text in required) or '  pull_request:' in publish or 'branches:' in publish:
         raise QualificationError('Publication must remain stable-tag gated after complete validation')
     if (publish.count('packages: write') != 1 or publish.count('python3 scripts/release_gate.py') != 2
@@ -78,6 +79,7 @@ def workflow_policy(ci, publish, verification=None):
                     "github.ref == 'refs/heads/main'", 'github.actor == github.repository_owner',
                     'github.triggering_actor == github.repository_owner',
                     'HARBOR_GHCR_PACKAGE_ID: ${{ vars.HARBOR_GHCR_PACKAGE_ID }}',
+                    "HARBOR_GHCR_PACKAGE_VISIBILITY: ${{ vars.HARBOR_GHCR_PACKAGE_VISIBILITY || 'private' }}",
                     'verify-published --tag "$RELEASE_TAG" --digest "$DIGEST"')
         if (not all(text in verification for text in required)
                 or any(text in verification for text in ('  push:', '  pull_request:', 'docker/build-push-action@'))
@@ -95,6 +97,9 @@ def package_check(required):
     approved_id = os.environ.get('HARBOR_GHCR_PACKAGE_ID', '')
     if approved_id and not re.fullmatch(r'[1-9][0-9]{0,19}', approved_id):
         raise QualificationError('Approved package ID must be a positive decimal integer')
+    expected_visibility = os.environ.get('HARBOR_GHCR_PACKAGE_VISIBILITY') or 'private'
+    if expected_visibility not in ('private', 'public'):
+        raise QualificationError('Expected package visibility must be private or public')
     response = subprocess.run(['gh', 'api', '--hostname', 'github.com', '--include',
                               '-H', 'Accept: application/vnd.github+json',
                               '-H', 'X-GitHub-Api-Version: 2022-11-28',
@@ -110,8 +115,8 @@ def package_check(required):
         raise QualificationError('Package access or required package verification failed')
     package = json.loads(body)
     if (not isinstance(package, dict) or package.get('name') != 'harbor'
-            or package.get('visibility') != 'private'):
-        raise QualificationError('Package must be harbor and private')
+            or package.get('visibility') != expected_visibility):
+        raise QualificationError('Package name or owner-approved visibility mismatch')
     if approved_id and (type(package.get('id')) is not int or str(package['id']) != approved_id):
         raise QualificationError('Package differs from owner-approved package ID')
     if 'repository' in package:
@@ -125,7 +130,7 @@ def package_check(required):
         linkage = 'owner_verified_package_id; current linkage requires owner API check'
     else:
         raise QualificationError('Package linkage unavailable; owner-verified package ID required')
-    return {'package': 'harbor', 'visibility': 'private', 'repository_linkage': linkage}
+    return {'package': 'harbor', 'visibility': expected_visibility, 'repository_linkage': linkage}
 
 
 def workflows():
@@ -225,8 +230,9 @@ def validate_release_labels(image, repository, revision, target_version):
     return expected
 
 
-def validate_private_modes(archive_bytes):
-    required = {'content.key', 'owner-password', 'drive.db', 'storage.json'}
+def validate_private_modes(archive_bytes, web_setup=False):
+    required = {'content.key', 'drive.db', 'storage.json'}
+    required.update({'setup/owner-password', 'setup/config.env'} if web_setup else {'owner-password'})
     seen = set()
     with tarfile.open(fileobj=io.BytesIO(archive_bytes)) as archive:
         for member in archive:
@@ -235,27 +241,48 @@ def validate_private_modes(archive_bytes):
                 if not member.isfile() or member.mode != 0o600:
                     raise QualificationError('Persistent secret/metadata file permissions invalid')
                 seen.add(name)
-            if name in ('.', 'data') and member.mode != 0o700:
+            if name in ('.', 'data', 'setup') and member.mode != 0o700:
                 raise QualificationError('Persistent data directory permissions invalid')
     if seen != required:
         raise QualificationError('Persistent secret/metadata files missing')
 
 
-def wait_ready(container, timeout=90):
+def wait_ready(container, timeout=90, setup=False):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         port = run('docker', 'port', container, '8080/tcp').decode().strip()
         if re.fullmatch(r'127\.0\.0\.1:[0-9]+', port):
             origin = 'http://' + port
             try:
-                with urllib.request.build_opener(NoRedirect()).open(origin + '/ready', timeout=2) as response:
-                    if response.status == 200 and json.load(response) == {'status': 'ready'}:
+                path = '/api/v1/setup/status' if setup else '/ready'
+                expected = {'required': True} if setup else {'status': 'ready'}
+                with urllib.request.build_opener(NoRedirect()).open(origin + path, timeout=2) as response:
+                    if response.status == 200 and json.load(response) == expected:
                         run('docker', 'exec', container, '/app/drive', 'health')
                         return origin
             except (OSError, ValueError, urllib.error.URLError):
                 pass
         time.sleep(.25)
-    raise QualificationError('Isolated container did not become ready')
+    raise QualificationError('Isolated container did not reach expected setup/readiness state')
+
+
+def setup_request(origin, method, path, body=None, token='', expect=200, request_origin=None):
+    headers = {'Origin': origin if request_origin is None else request_origin}
+    if token:
+        headers['X-Harbor-Setup-Token'] = token
+    if body is not None:
+        body = json.dumps(body).encode()
+        headers['Content-Type'] = 'application/json'
+    request = urllib.request.Request(origin + '/api/v1/setup' + path, body, headers, method=method)
+    try:
+        response = urllib.request.build_opener(NoRedirect()).open(request, timeout=15)
+    except urllib.error.HTTPError as error:
+        response = error
+    with response:
+        content = response.read(16385)
+        if response.status != expect or len(content) > 16384:
+            raise QualificationError('First-run setup HTTP response invalid')
+        return json.loads(content) if content and expect < 400 else None
 
 
 def check_download(client, node, content):
@@ -273,12 +300,15 @@ def docker_smoke(image, platform, target_version, revision=None):
     validate_image(metadata, platform, target_version)
     labels = validate_release_labels(metadata, os.environ.get('GITHUB_REPOSITORY', ''), revision, target_version) if revision else None
     identity = 'harbor-ci-' + secrets.token_hex(8)
-    volume, container, initializer = identity + '-data', identity, identity + '-init'
+    volume, container, initializer, network = identity + '-data', identity, identity + '-init', identity + '-net'
     created = []
     volume_created = False
+    network_created = False
+    setup_token = secrets.token_urlsafe(32)
     options = ['--platform', platform, '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
+               '--network', network,
                '--pids-limit=128', '--memory=768m', '--cpus=2', '--tmpfs', '/tmp:size=128m,noexec,nosuid,nodev',
-               '--volume', volume + ':/data', '--env', 'DRIVE_ENV_FILE=-', '--env', 'DRIVE_STORAGE=local',
+               '--env', 'DRIVE_ENV_FILE=-', '--env', 'DRIVE_STORAGE=local',
                '--env', 'DRIVE_SECURE_COOKIES=false', '--env', 'DRIVE_ALLOW_REMOTE_HTTP=true']
     try:
         existing = subprocess.run(['docker', 'volume', 'inspect', volume], capture_output=True)
@@ -286,26 +316,61 @@ def docker_smoke(image, platform, target_version, revision=None):
             raise QualificationError('Refusing to reuse an existing Docker volume')
         run('docker', 'volume', 'create', volume)
         volume_created = True
+        run('docker', 'network', 'create', '--internal', network)
+        network_created = True
         with tempfile.TemporaryDirectory(prefix='harbor-ci-password-') as temporary:
             password = Path(temporary) / 'owner-password'
-            run('docker', 'create', '--name', initializer, *options, image, 'init')
+            password.write_text(secrets.token_urlsafe(32))
+            password.chmod(0o600)
+            run('docker', 'create', '--name', initializer, *options,
+                '--tmpfs', '/data:size=16m,uid=65532,gid=65532,mode=0700,noexec,nosuid,nodev', image, 'init')
             created.append(initializer)
             run('docker', 'start', '--attach', initializer)
-            run('docker', 'cp', initializer + ':/data/owner-password', str(password))
-            password.chmod(0o600)
+            if json.loads(run('docker', 'inspect', '--format', '{{json .State.ExitCode}}', initializer)) != 0:
+                raise QualificationError('Legacy initialization failed')
             with tarfile.open(fileobj=io.BytesIO(run('docker', 'cp', initializer + ':/app/harbor-recovery', '-'))) as archive:
                 executable = archive.next()
                 if not executable or not executable.isfile() or not executable.mode & 0o111:
                     raise QualificationError('Recovery executable missing from final image')
 
-            def start():
+            def start(setup=False):
                 run('docker', 'create', '--name', container, '--publish', '127.0.0.1::8080',
-                    '--stop-timeout=20', *options, image)
+                    '--stop-timeout=20', *options, '--volume', volume + ':/data',
+                    '--env', 'DRIVE_SETUP_TOKEN=' + setup_token, image)
                 created.append(container)
                 run('docker', 'start', container)
-                return Client(wait_ready(container), password)
+                origin = wait_ready(container, setup=setup)
+                if setup:
+                    return origin
+                if setup_request(origin, 'GET', '/status') != {'required': False}:
+                    raise QualificationError('First-run setup reopened after restart/recreation')
+                setup_request(origin, 'POST', '/account', {'password': password.read_text()}, setup_token, expect=404)
+                return Client(origin, password)
 
-            client = start()
+            origin = start(setup=True)
+            opener = urllib.request.build_opener(NoRedirect())
+            with opener.open(origin + '/', timeout=15) as response:
+                index = response.read(65537)
+                if response.status != 200 or len(index) > 65536 or b'id="root"' not in index:
+                    raise QualificationError('Packaged onboarding HTML unavailable')
+            assets = re.findall(r'(?:src|href)="(/assets/[A-Za-z0-9._/-]+)"', index.decode())
+            if not assets:
+                raise QualificationError('Packaged onboarding assets missing')
+            for path in assets:
+                with opener.open(origin + path, timeout=15) as response:
+                    if response.status != 200 or not response.read(1):
+                        raise QualificationError('Packaged onboarding asset unavailable')
+            setup_request(origin, 'POST', '/verify', {}, expect=401)
+            setup_request(origin, 'POST', '/verify', {}, setup_token, expect=403,
+                          request_origin='https://example.invalid')
+            setup_request(origin, 'POST', '/verify', {}, setup_token)
+            account = setup_request(origin, 'POST', '/account', {'password': password.read_text()}, setup_token)
+            if not account.get('account_ready'):
+                raise QualificationError('First-run owner account was not accepted')
+            setup_request(origin, 'POST', '/complete', {'adapter': 'local'}, setup_token)
+            client = Client(wait_ready(container), password)
+            if setup_request(client.base_url, 'GET', '/status') != {'required': False}:
+                raise QualificationError('First-run setup remains available after completion')
             client.request('GET', '/diagnostics', anonymous=True, expect=401)
             diagnostics, _ = client.request('GET', '/diagnostics')
             if (diagnostics.get('version') != target_version or diagnostics.get('adapter') != 'local'
@@ -323,6 +388,9 @@ def docker_smoke(image, platform, target_version, revision=None):
             client.request('GET', '/nodes/' + upload['id'], expect=404)
             run('docker', 'restart', '--time', '20', container)
             client = Client(wait_ready(container), password)
+            if setup_request(client.base_url, 'GET', '/status') != {'required': False}:
+                raise QualificationError('First-run setup reopened after restart')
+            setup_request(client.base_url, 'POST', '/account', {'password': password.read_text()}, setup_token, expect=404)
             resumed, _ = client.request('GET', '/uploads/' + upload['id'])
             if resumed.get('received_chunks') != [0]:
                 raise QualificationError('Multipart state did not survive restart')
@@ -335,7 +403,7 @@ def docker_smoke(image, platform, target_version, revision=None):
             run('docker', 'stop', '--time', '20', container)
             if json.loads(run('docker', 'inspect', '--format', '{{json .State.ExitCode}}', container)) != 0:
                 raise QualificationError('Container did not shut down cleanly')
-            validate_private_modes(run('docker', 'cp', container + ':/data/.', '-'))
+            validate_private_modes(run('docker', 'cp', container + ':/data/.', '-'), web_setup=True)
             run('docker', 'rm', container)
             created.remove(container)
             client = start()
@@ -349,6 +417,7 @@ def docker_smoke(image, platform, target_version, revision=None):
             return {'platform': platform, 'version': target_version, 'adapter': 'local',
                     'multipart_bytes': len(content), 'sha256_equal': True, 'range': 'PASS',
                     'auth_and_csrf': 'PASS', 'restart_resume': 'PASS', 'container_recreation': 'PASS',
+                    'web_onboarding_and_lockout': 'PASS', 'legacy_init': 'PASS',
                     'private_state_modes': 'PASS', 'nonroot_health_and_executables': 'PASS',
                     'clean_shutdown': 'PASS', 'telegram': 'NOT TESTED', 'release_oci_labels': labels}
     finally:
@@ -356,6 +425,8 @@ def docker_smoke(image, platform, target_version, revision=None):
             run('docker', 'rm', '--force', name)
         if volume_created:
             run('docker', 'volume', 'rm', volume)
+        if network_created:
+            run('docker', 'network', 'rm', network)
 
 
 def published_index(raw, sbom, provenance, expected_digest):

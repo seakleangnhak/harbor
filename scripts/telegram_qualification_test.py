@@ -5,13 +5,50 @@ import json
 from pathlib import Path
 import struct
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 import zlib
 
 import telegram_qualification as qualification
 
 
 class QualificationTests(unittest.TestCase):
+    def test_current_chunk_geometry_survives_saved_state(self):
+        state = {'version': 1, 'run_id': '123456789abc', 'folder_id': 'a' * 32,
+                 'chunk_size': 100 << 20, 'files': {}}
+        for name in ('small.txt', 'small.png', 'small.pdf', 'multipart.bin'):
+            content, mime = qualification.fixture(name, state['chunk_size'])
+            state['files'][name] = {'size': len(content), 'sha256': qualification.digest(content), 'mime_type': mime}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'state.json'
+            qualification.save_state(path, state)
+            self.assertEqual(qualification.load_state(path), state)
+            for invalid in (0, (100 << 20) + 1):
+                state['chunk_size'] = invalid
+                path.write_text(json.dumps(state))
+                with self.assertRaisesRegex(qualification.QualificationError, 'Invalid qualification state'):
+                    qualification.load_state(path)
+
+    def test_live_workload_guard_accepts_current_chunks_before_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = SimpleNamespace(phase='upload', state_file=Path(directory) / 'state.json',
+                                   base_url='http://127.0.0.1:8080', password_file=Path(directory) / 'password',
+                                   local_check=True, server_pid=None, live=False)
+            for chunk_size in (100 << 20, (100 << 20) + 1):
+                diagnostics = {'adapter': 'local', 'chunk_size': chunk_size}
+                with mock.patch.object(qualification, 'OUTPUT', Path(directory)), \
+                        mock.patch.object(qualification, 'Client') as client:
+                    client.return_value.request.side_effect = [({}, None), (diagnostics, None),
+                                                               RuntimeError('fixture stage reached'), (None, None)]
+                    if chunk_size == 100 << 20:
+                        with self.assertRaisesRegex(RuntimeError, 'fixture stage reached'):
+                            qualification.run(args)
+                    else:
+                        with self.assertRaisesRegex(qualification.QualificationError, '100 MiB'):
+                            qualification.run(args)
+                    self.assertFalse(args.state_file.exists())
+
     def test_generated_fixtures_are_valid_and_deterministic(self):
         for name in ('small.txt', 'small.png', 'small.pdf', 'multipart.bin'):
             first, _ = qualification.fixture(name, 4 << 20)

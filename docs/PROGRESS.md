@@ -1,5 +1,11 @@
 # Progress
 
+## v1.1.0 release qualification — in progress
+
+Owner authorized sanitized-source cleanup, push, new release and GHCR image. Release agent updated qualification geometry and exact-image web-onboarding smoke; independent onboarding/storage review found no release blocker or justified runtime rewrite. Coordinator aligned version defaults and installation docs. Existing public GHCR visibility is pinned explicitly; repository visibility stays private. No original installation/session/data changes.
+
+Fresh frontend tests/typecheck/build passed. Full default/tagged Go/race/vet, Python checks, browsers, production image builds and hosted qualification are being recorded in [release report](RELEASE_1.1.0.md). One race HTTP-header deadline was too short for authenticated 100 MiB Range output; test-only bounded deadline increased, affected/full checks pending. Historical sections below retain their original scope.
+
 ## Premium onboarding UI — local qualification PASS
 
 First-run setup now uses a compact responsive shell, clear progress, native provider cards, light/dark control, accessible secret fields and distinct Telegram/review states. Protected active-flow status fixes reload recovery without exposing account/channel identity. Retry guidance and trailing-slash channel normalization align with backend behavior. Existing workspace, encrypted state and deployment remain intact.
