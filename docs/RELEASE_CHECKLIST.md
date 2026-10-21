@@ -68,6 +68,6 @@ The ref must already exist and be trusted. Packaging never creates Git tags, sta
 
 Operations: [production runbook](PRODUCTION_OPERATIONS.md), [recovery quickstart](RECOVERY_QUICKSTART.md), [known limitations](KNOWN_LIMITATIONS.md).
 
-## Next automated release — proposed v1.0.1
+## Current automated releases
 
-The completed v1.0.0 checklist above is historical. Its tag already exists and must never be recreated or moved. New workflows were added afterward; v1.0.1 is proposed, not tagged. Before any new tag/push/publication, review [open-source readiness](OPEN_SOURCE_READINESS_REPORT.md), obtain explicit owner approval, run the actual GitHub main CI, configure protected tags and `ghcr-release` reviewers, finalize the changelog, and verify a clean accepted tree. Follow [GHCR publishing](GHCR_PUBLISHING_GUIDE.md); ordinary PR/main CI cannot publish. Local checks cannot establish successful remote Actions/GHCR behavior.
+The v1.0.0 checklist above is historical; its original tag is not imported into sanitized history. v1.0.1 was published, and v1.1.0 uses the corrected owner-gated publishing workflow. For current results and image identity, see [v1.1.0 qualification](RELEASE_1.1.0.md). Follow [GHCR publishing](GHCR_PUBLISHING_GUIDE.md): explicit owner authorization, clean audited source, successful hosted CI, an unused annotated stable tag, complete release validation, expected package identity/visibility, immutable manifest checks and pulled-image smoke. Never move historical tags. Repository/package visibility and remote application deployment are separate owner actions.

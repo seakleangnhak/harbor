@@ -1,10 +1,10 @@
 # Progress
 
-## v1.1.0 release qualification — in progress
+## v1.1.0 release — artifact qualification and publication PASS
 
 Owner authorized sanitized-source cleanup, push, new release and GHCR image. Release agent updated qualification geometry and exact-image web-onboarding smoke; independent onboarding/storage review found no release blocker or justified runtime rewrite. Coordinator aligned version defaults and installation docs. Existing public GHCR visibility is pinned explicitly; repository visibility stays private. No original installation/session/data changes.
 
-Fresh frontend tests/typecheck/build passed. Full default/tagged Go/race/vet, Python checks, browsers, production image builds and hosted qualification are being recorded in [release report](RELEASE_1.1.0.md). One race HTTP-header deadline was too short for authenticated 100 MiB Range output; test-only bounded deadline increased, affected/full checks pending. Historical sections below retain their original scope.
+Fresh frontend/default/tagged Go/race/vet, Python, Chromium/WebKit/axe and both production image builds/smokes passed; hosted main CI also passed all five jobs. [Tagged release validation](https://github.com/seakleangnhak/harbor/actions/runs/39582004996), GHCR publication and independent pulled-image verification passed. AMD64/ARM64 index `sha256:8d6aa16e222b3bcef948b8cf61b7799b78206879de7dcf4bc2232274e015d132` is shared by `1.1.0`, `1.1` and `latest`; [release report](RELEASE_1.1.0.md) records exact scope and [GitHub release](https://github.com/seakleangnhak/harbor/releases/tag/v1.1.0). Test-only bounded deadlines and isolated Docker bridge ingress fixed actual qualification failures; full reruns passed. Post-tag verifier compatibility also passed 28 focused tests and actual v1.0.1 ARM64 smoke. Current live Telegram web setup/100 MiB throughput and live cross-DC remain NOT TESTED. Original installation remains healthy; no remote application deployment or visibility change. Historical sections below retain their original scope.
 
 ## Premium onboarding UI — local qualification PASS
 

@@ -1,10 +1,10 @@
 # GitHub and GHCR release guide
 
-Current release candidate: **v1.1.0**, authorized by the owner for sanitized-source push, release tag and image publication. [Current qualification](RELEASE_1.1.0.md) records actual results. [v1.0.1 receipt](GHCR_RELEASE_REPORT.md) remains historical: its original upload succeeded but publisher failed the metadata guard; later read-only verification passed. No historical tag/image is overwritten.
+Current release: **[v1.1.0](https://github.com/seakleangnhak/harbor/releases/tag/v1.1.0)**, published after owner-authorized sanitized-source push, annotated release tag and full hosted validation. [Current qualification](RELEASE_1.1.0.md) records actual results. [v1.0.1 receipt](GHCR_RELEASE_REPORT.md) remains historical: its original upload succeeded but publisher failed the metadata guard; later read-only verification passed. No historical tag/image is overwritten.
 
 Owner API preflight found the existing GHCR package **public** and linked to this repository; the source repository remains **private**. This release does not change either visibility. `HARBOR_GHCR_PACKAGE_ID` pins the existing package; `HARBOR_GHCR_PACKAGE_VISIBILITY=public` pins its observed state. Forks default to private. Recheck linkage and visibility with the owner API before each release; a different/invalid value fails closed.
 
-**Publication lineage:** use the [sanitized source repository](PUBLIC_REPOSITORY_PLAN.md), which has no original commits or `v1.0.0` tag. The tag identity above belongs only to the retained private development checkout. Follow the [private-first sequence](FIRST_GITHUB_RELEASE.md); original history and old source archives are blocked from publication by the [privacy audit](PUBLICATION_PRIVACY_AUDIT.md).
+**Publication lineage:** use the [sanitized source repository](PUBLIC_REPOSITORY_PLAN.md), which has no original commits or `v1.0.0` tag. The original `v1.0.0` tag belongs only to the retained private development checkout; sanitized `v1.0.1` and `v1.1.0` have separate immutable identities. Follow the [private-first sequence](FIRST_GITHUB_RELEASE.md); original history and old source archives are blocked from publication by the [privacy audit](PUBLICATION_PRIVACY_AUDIT.md).
 
 ## Before publication
 
@@ -27,31 +27,15 @@ Owner API preflight found the existing GHCR package **public** and linked to thi
 
 The gate rejects branch refs, prereleases, malformed tags, lightweight tags, historical v1.0.0, mismatched input/ref/commit, source outside `origin/main`, and a version older than another stable tag. It accepts no user-supplied registry, image name, build context or arbitrary Docker tag. Manual dispatch cannot turn `main` into a release. Repository rules remain necessary: maintainers who can modify a publishing workflow are trusted.
 
-For repository `OWNER/REPOSITORY`, image is `ghcr.io/<lowercase-owner>/harbor`. No actual owner/package is assumed. Stable **v1.0.1** produces exactly `1.0.1`, `1.0` and `latest`. There is no automatic major `1` tag. Only stable successful releases update aliases; older patch backports are rejected by this workflow to prevent moving `latest` backward.
+For repository `OWNER/REPOSITORY`, image is `ghcr.io/<lowercase-owner>/harbor`. This repository publishes `ghcr.io/seakleangnhak/harbor`. Stable **v1.1.0** produces exactly `1.1.0`, `1.1` and `latest`. There is no automatic major `1` tag. Only stable successful releases update aliases; older patch backports are rejected by this workflow to prevent moving `latest` backward.
 
-## Proposed first automated release
+## Current and future releases
 
-After owner authorization and a successful real `main` CI run:
+`v1.0.1` and `v1.1.0` already exist; never recreate, move or force-push them. [Current qualification](RELEASE_1.1.0.md) records the approved v1.1.0 source and publication checks. The [first-release sequence](FIRST_GITHUB_RELEASE.md) is historical v1.0.1 guidance, not a command to repeat that tag.
 
-```sh
-# Inside the sanitized publication repository; original v1.0.0 is deliberately absent.
-git status --porcelain
-git branch --show-current
-git rev-parse HEAD
-git tag --list v1.0.1
-```
+For a future release, obtain owner authorization, select an unused stable version, finalize its changelog and review the exact sanitized source commit. Require an empty working tree, `main`, a successful hosted CI run for that commit, absent local/remote target tag, and approved package identity/visibility. Create and normally push one annotated tag at the approved SHA. Full release validation still runs before publication.
 
-Status must be empty, branch must be `main`, HEAD must match the explicitly approved successful-CI commit, and v1.0.1 must be absent. Finalize its changelog, review all changes, commit, and obtain release/publication sign-off. Use the guarded commands in [first release](FIRST_GITHUB_RELEASE.md); never overwrite an existing tag.
-
-Use the [first-release tag sequence](FIRST_GITHUB_RELEASE.md#3-approve-and-publish-the-first-image), which aborts on failed private-repository, approved-SHA, branch, clean-tree and tag checks. Never force-push a release tag.
-
-A dispatch retries an already approved tag; select that tag as workflow ref:
-
-```sh
-gh workflow run docker-publish.yml --ref v1.0.1 -f release_tag=v1.0.1
-```
-
-The original v1.0.0 tree predates these workflows. Dispatching the new workflow against `main` with `release_tag=v1.0.0` intentionally fails; never move v1.0.0 to add automation.
+Manual dispatch can retry an approved existing tag only after reviewing the previous run and registry state; select that same tag as the workflow ref. Do not blindly rerun after upload or overwrite an immutable version. The original v1.0.0 tree predates these workflows; never move it to add automation.
 
 ## Image identity and attestations
 
@@ -59,13 +43,13 @@ Publishing uses pinned action commits, immutable Node/Go/distroless base indices
 
 The job rebuilds the same validated release source/version and arguments for both platforms. OCI source/version/revision/description/MIT/documentation labels are added. This published index includes SBOM and minimal BuildKit provenance; its digest differs from a no-attestation local smoke image. Attestations describe build contents, not an independent security review or signature. There is no OIDC/keyless signing or GitHub artifact-attestation claim, and no corresponding extra token permissions.
 
-Before publication, a built-in-token package API check permits not-found only for an unpinned first package. Existing packages must be named `harbor`, private and approved. When REST supplies repository linkage, mismatches fail closed. Actual hosted testing found that `GITHUB_TOKEN` entirely omits the repository field, although owner authentication returns it. GitHub's GraphQL API does not support granular-permission registries such as GHCR.
+Before publication, a built-in-token package API check permits not-found only for an unpinned first package. Existing packages must be named `harbor`, have the owner-approved expected visibility, and match the approved identity. When REST supplies repository linkage, mismatches fail closed. Actual hosted testing found that `GITHUB_TOKEN` entirely omits the repository field, although owner authentication returns it. GitHub's GraphQL API does not support granular-permission registries such as GHCR.
 
-For that response shape, set nonsecret repository variable **`HARBOR_GHCR_PACKAGE_ID`** to the immutable package ID only after the owner independently verifies current private visibility and exact repository association through the Packages API/settings. Automation then requires that exact integer ID and private visibility; any present invalid linkage, changed ID or pinned-package 404 fails closed. This verifies continuity of an owner-approved package, **not current linkage under the workflow token**. Refresh the owner-authenticated association check before each approved release. Never add a PAT to Actions to obtain a larger API response.
+For that response shape, set nonsecret repository variable **`HARBOR_GHCR_PACKAGE_ID`** to the immutable package ID only after the owner independently verifies current expected visibility and exact repository association through the Packages API/settings. Automation then requires that exact integer ID and `HARBOR_GHCR_PACKAGE_VISIBILITY` (private by default); any present invalid linkage, changed ID or pinned-package 404 fails closed. This verifies continuity of an owner-approved package, **not current linkage under the workflow token**. Refresh the owner-authenticated association check before each approved release. Never add a PAT to Actions to obtain a larger API response.
 
 The owner-verified pin is configured for the first package. A new installation whose first-push response omits linkage must stop after upload, have its owner review/pin the new package, then verify that existing immutable digest. Do not blindly rerun publishing: creation labels/provenance may change image digests even at the same source. The existing v1.0.1 workflow is immutable; fixes on main apply to later releases.
 
-Read-only workflow `verify-published.yml` qualifies an existing image without rebuilding or moving registry tags. Dispatch it from main as repository owner, supplying an existing annotated stable tag and the actual SHA-256 index digest. It validates tag/main ancestry, package policy, exact raw index SHA-256, both distinct platform children, attestation bindings and SPDX/SLSA predicates, then pulls each child and runs isolated encrypted multipart/checksum/restart/recreation smoke checks. Its summary records source, digest and per-platform results. It receives only `contents: read` and `packages: read`; no build/push path. Original failed publishing runs retain their actual result. [Release evidence](GHCR_RELEASE_REPORT.md).
+Read-only workflow `verify-published.yml` qualifies an existing image without rebuilding or moving registry tags. Dispatch it from main as repository owner, supplying an existing annotated stable tag and the actual SHA-256 index digest. It validates tag/main ancestry, package policy, exact raw index SHA-256, both distinct platform children, attestation bindings and SPDX/SLSA predicates, then pulls each child and runs isolated encrypted multipart/checksum/restart/recreation smoke checks. Its summary records source, digest and per-platform results. It receives only `contents: read` and `packages: read`; no build/push path. Original failed publishing runs retain their actual result. [Current evidence](RELEASE_1.1.0.md) · [historical v1.0.1 evidence](GHCR_RELEASE_REPORT.md).
 
 ```sh
 gh workflow run verify-published.yml --ref main \
@@ -80,21 +64,21 @@ After approved publication, verify from a clean client:
 docker buildx imagetools inspect ghcr.io/OWNER/harbor@sha256:DIGEST
 ```
 
-Set the actual lowercase owner and full SHA-256 digest, then inspect index platforms, OCI labels and attached attestations. Pin deployments to the digest. The repository's Compose file continues to **build from source**; it does not assume a GHCR package exists. Follow [operations](PRODUCTION_OPERATIONS.md) to use a trusted immutable image with preserved volume identity and `--no-build`.
+Set the actual lowercase owner and full SHA-256 digest, then inspect index platforms, OCI labels and attached attestations. Pin deployments to the digest. The repository's Compose file defaults to the versioned GHCR image; `--build` remains available for trusted source. Follow [operations](PRODUCTION_OPERATIONS.md) to use a trusted immutable image with preserved volume identity and `--no-build`.
 
 ## Reproducible local packaging
 
 The local release script never publishes or tags. It packages a trusted committed ref, rejects private source members, validates immutable bases and exports image/source archives plus `release.json` and `SHA256SUMS`. Existing output paths/image tags fail closed.
 
 ```sh
-# After an approved v1.0.1 tag exists; choose fresh output/image names.
-python3 scripts/release.py --ref v1.0.1 --version 1.0.1 \
-  --platform linux/arm64 --image harbor-rebuild:v1.0.1-arm64 \
-  --output output/releases/v1.0.1-arm64
-(cd output/releases/v1.0.1-arm64 && shasum -a 256 -c SHA256SUMS)
+# Rebuild approved v1.1.0 locally; choose fresh output/image names.
+python3 scripts/release.py --ref v1.1.0 --version 1.1.0 \
+  --platform linux/arm64 --image harbor-rebuild:v1.1.0-arm64 \
+  --output output/releases/v1.1.0-arm64
+(cd output/releases/v1.1.0-arm64 && shasum -a 256 -c SHA256SUMS)
 ```
 
-Repeat with `linux/amd64` and separate output/image names. `--version` injects diagnostics and OCI version metadata; the ordinary development default remains 1.0.0 until a release version is chosen. Go binary reproducibility is checked in CI. Multiarch index/attestation bytes and registry tags are different artifacts from the historical single-platform v1.0.0 image.
+Repeat with `linux/amd64` and separate output/image names. `--version` injects diagnostics and OCI version metadata; the current source default is 1.1.0. Go binary reproducibility is checked in CI. Multiarch index/attestation bytes and registry tags are different artifacts from the historical single-platform v1.0.0 image.
 
 ## Older release, without changing history
 

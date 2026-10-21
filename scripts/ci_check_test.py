@@ -201,6 +201,47 @@ class CICheckTest(unittest.TestCase):
         with self.assertRaises(check.QualificationError):
             check.validate_image(value, 'linux/amd64', '1.0.1')
 
+    def test_docker_smoke_uses_supported_setup_for_each_image_version(self):
+        executable = io.BytesIO()
+        with tarfile.open(fileobj=executable, mode='w') as archive:
+            member = tarfile.TarInfo('harbor-recovery')
+            member.mode = 0o755
+            archive.addfile(member)
+        for target_version, web_setup in (('1.0.1', False), ('1.0.10', False),
+                                          ('1.1.0', True), ('1.10.0', True)):
+            metadata = {'Os': 'linux', 'Architecture': 'arm64', 'Config': {'User': '65532',
+                        'Entrypoint': ['/app/drive'], 'Healthcheck': {'Test': ['CMD', '/app/drive', 'health']},
+                        'Labels': {'org.opencontainers.image.version': target_version}}}
+
+            def docker(*args, **kwargs):
+                if args[:3] == ('docker', 'image', 'inspect'):
+                    return json.dumps([metadata]).encode()
+                if args[:3] == ('docker', 'inspect', '--format'):
+                    return b'0'
+                if args[:2] == ('docker', 'cp'):
+                    if args[2].endswith(':/data/owner-password'):
+                        Path(args[3]).write_text('synthetic-legacy-owner-password')
+                    elif args[2].endswith(':/app/harbor-recovery'):
+                        return executable.getvalue()
+                return b''
+
+            with self.subTest(version=target_version), mock.patch.object(check, 'run', side_effect=docker) as commands, \
+                    mock.patch.object(check.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1)), \
+                    mock.patch.object(check, 'setup_request') as setup, \
+                    mock.patch.object(check, 'wait_ready', side_effect=RuntimeError('startup reached')) as ready:
+                with self.assertRaisesRegex(RuntimeError, 'startup reached'):
+                    check.docker_smoke('harbor:fixture', 'linux/arm64', target_version)
+                ready.assert_called_once()
+                self.assertEqual(ready.call_args.kwargs, {'setup': web_setup})
+                setup.assert_not_called()
+                calls = [call.args for call in commands.call_args_list]
+                initializer = next(call for call in calls if call[:2] == ('docker', 'create') and call[-1] == 'init')
+                self.assertEqual('--volume' in initializer, not web_setup)
+                self.assertEqual(any(str(arg).startswith('/data:size=16m') for arg in initializer), web_setup)
+                password_copies = [call for call in calls if call[:2] == ('docker', 'cp')
+                                   and call[2].endswith(':/data/owner-password')]
+                self.assertEqual(len(password_copies), int(not web_setup))
+
     def test_pulled_release_labels_bind_source_commit_and_license(self):
         source, revision = 'https://github.com/Example-Owner/harbor', 'a' * 40
         labels = {'org.opencontainers.image.source': source, 'org.opencontainers.image.version': '1.0.1',

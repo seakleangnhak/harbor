@@ -304,6 +304,7 @@ def docker_smoke(image, platform, target_version, revision=None):
     created = []
     volume_created = False
     network_created = False
+    web_setup = tuple(map(int, target_version.split('.'))) >= (1, 1, 0)
     setup_token = secrets.token_urlsafe(32)
     options = ['--platform', platform, '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
                '--network', network, '--dns', '127.0.0.1',
@@ -323,14 +324,20 @@ def docker_smoke(image, platform, target_version, revision=None):
         network_created = True
         with tempfile.TemporaryDirectory(prefix='harbor-ci-password-') as temporary:
             password = Path(temporary) / 'owner-password'
-            password.write_text(secrets.token_urlsafe(32))
-            password.chmod(0o600)
-            run('docker', 'create', '--name', initializer, *options,
-                '--tmpfs', '/data:size=16m,uid=65532,gid=65532,mode=0700,noexec,nosuid,nodev', image, 'init')
+            if web_setup:
+                password.write_text(secrets.token_urlsafe(32))
+                password.chmod(0o600)
+                init_data = ['--tmpfs', '/data:size=16m,uid=65532,gid=65532,mode=0700,noexec,nosuid,nodev']
+            else:
+                init_data = ['--volume', volume + ':/data']
+            run('docker', 'create', '--name', initializer, *options, *init_data, image, 'init')
             created.append(initializer)
             run('docker', 'start', '--attach', initializer)
             if json.loads(run('docker', 'inspect', '--format', '{{json .State.ExitCode}}', initializer)) != 0:
                 raise QualificationError('Legacy initialization failed')
+            if not web_setup:
+                run('docker', 'cp', initializer + ':/data/owner-password', str(password))
+                password.chmod(0o600)
             with tarfile.open(fileobj=io.BytesIO(run('docker', 'cp', initializer + ':/app/harbor-recovery', '-'))) as archive:
                 executable = archive.next()
                 if not executable or not executable.isfile() or not executable.mode & 0o111:
@@ -339,41 +346,45 @@ def docker_smoke(image, platform, target_version, revision=None):
             def start(setup=False):
                 run('docker', 'create', '--name', container, '--publish', '127.0.0.1::8080',
                     '--stop-timeout=20', *options, '--volume', volume + ':/data',
-                    '--env', 'DRIVE_SETUP_TOKEN=' + setup_token, image)
+                    *(['--env', 'DRIVE_SETUP_TOKEN=' + setup_token] if web_setup else []), image)
                 created.append(container)
                 run('docker', 'start', container)
                 origin = wait_ready(container, setup=setup)
                 if setup:
                     return origin
-                if setup_request(origin, 'GET', '/status') != {'required': False}:
-                    raise QualificationError('First-run setup reopened after restart/recreation')
-                setup_request(origin, 'POST', '/account', {'password': password.read_text()}, setup_token, expect=404)
+                if web_setup:
+                    if setup_request(origin, 'GET', '/status') != {'required': False}:
+                        raise QualificationError('First-run setup reopened after restart/recreation')
+                    setup_request(origin, 'POST', '/account', {'password': password.read_text()}, setup_token, expect=404)
                 return Client(origin, password)
 
-            origin = start(setup=True)
-            opener = urllib.request.build_opener(NoRedirect())
-            with opener.open(origin + '/', timeout=15) as response:
-                index = response.read(65537)
-                if response.status != 200 or len(index) > 65536 or b'id="root"' not in index:
-                    raise QualificationError('Packaged onboarding HTML unavailable')
-            assets = re.findall(r'(?:src|href)="(/assets/[A-Za-z0-9._/-]+)"', index.decode())
-            if not assets:
-                raise QualificationError('Packaged onboarding assets missing')
-            for path in assets:
-                with opener.open(origin + path, timeout=15) as response:
-                    if response.status != 200 or not response.read(1):
-                        raise QualificationError('Packaged onboarding asset unavailable')
-            setup_request(origin, 'POST', '/verify', {}, expect=401)
-            setup_request(origin, 'POST', '/verify', {}, setup_token, expect=403,
-                          request_origin='https://example.invalid')
-            setup_request(origin, 'POST', '/verify', {}, setup_token)
-            account = setup_request(origin, 'POST', '/account', {'password': password.read_text()}, setup_token)
-            if not account.get('account_ready'):
-                raise QualificationError('First-run owner account was not accepted')
-            setup_request(origin, 'POST', '/complete', {'adapter': 'local'}, setup_token)
-            client = Client(wait_ready(container), password)
-            if setup_request(client.base_url, 'GET', '/status') != {'required': False}:
-                raise QualificationError('First-run setup remains available after completion')
+            if web_setup:
+                origin = start(setup=True)
+                opener = urllib.request.build_opener(NoRedirect())
+                with opener.open(origin + '/', timeout=15) as response:
+                    index = response.read(65537)
+                    if response.status != 200 or len(index) > 65536 or b'id="root"' not in index:
+                        raise QualificationError('Packaged onboarding HTML unavailable')
+                assets = re.findall(r'(?:src|href)="(/assets/[A-Za-z0-9._/-]+)"', index.decode())
+                if not assets:
+                    raise QualificationError('Packaged onboarding assets missing')
+                for path in assets:
+                    with opener.open(origin + path, timeout=15) as response:
+                        if response.status != 200 or not response.read(1):
+                            raise QualificationError('Packaged onboarding asset unavailable')
+                setup_request(origin, 'POST', '/verify', {}, expect=401)
+                setup_request(origin, 'POST', '/verify', {}, setup_token, expect=403,
+                              request_origin='https://example.invalid')
+                setup_request(origin, 'POST', '/verify', {}, setup_token)
+                account = setup_request(origin, 'POST', '/account', {'password': password.read_text()}, setup_token)
+                if not account.get('account_ready'):
+                    raise QualificationError('First-run owner account was not accepted')
+                setup_request(origin, 'POST', '/complete', {'adapter': 'local'}, setup_token)
+                client = Client(wait_ready(container), password)
+                if setup_request(client.base_url, 'GET', '/status') != {'required': False}:
+                    raise QualificationError('First-run setup remains available after completion')
+            else:
+                client = start()
             client.request('GET', '/diagnostics', anonymous=True, expect=401)
             diagnostics, _ = client.request('GET', '/diagnostics')
             if (diagnostics.get('version') != target_version or diagnostics.get('adapter') != 'local'
@@ -391,9 +402,10 @@ def docker_smoke(image, platform, target_version, revision=None):
             client.request('GET', '/nodes/' + upload['id'], expect=404)
             run('docker', 'restart', '--time', '20', container)
             client = Client(wait_ready(container), password)
-            if setup_request(client.base_url, 'GET', '/status') != {'required': False}:
-                raise QualificationError('First-run setup reopened after restart')
-            setup_request(client.base_url, 'POST', '/account', {'password': password.read_text()}, setup_token, expect=404)
+            if web_setup:
+                if setup_request(client.base_url, 'GET', '/status') != {'required': False}:
+                    raise QualificationError('First-run setup reopened after restart')
+                setup_request(client.base_url, 'POST', '/account', {'password': password.read_text()}, setup_token, expect=404)
             resumed, _ = client.request('GET', '/uploads/' + upload['id'])
             if resumed.get('received_chunks') != [0]:
                 raise QualificationError('Multipart state did not survive restart')
@@ -406,7 +418,7 @@ def docker_smoke(image, platform, target_version, revision=None):
             run('docker', 'stop', '--time', '20', container)
             if json.loads(run('docker', 'inspect', '--format', '{{json .State.ExitCode}}', container)) != 0:
                 raise QualificationError('Container did not shut down cleanly')
-            validate_private_modes(run('docker', 'cp', container + ':/data/.', '-'), web_setup=True)
+            validate_private_modes(run('docker', 'cp', container + ':/data/.', '-'), web_setup=web_setup)
             run('docker', 'rm', container)
             created.remove(container)
             client = start()
@@ -420,7 +432,7 @@ def docker_smoke(image, platform, target_version, revision=None):
             return {'platform': platform, 'version': target_version, 'adapter': 'local',
                     'multipart_bytes': len(content), 'sha256_equal': True, 'range': 'PASS',
                     'auth_and_csrf': 'PASS', 'restart_resume': 'PASS', 'container_recreation': 'PASS',
-                    'web_onboarding_and_lockout': 'PASS', 'legacy_init': 'PASS',
+                    'web_onboarding_and_lockout': 'PASS' if web_setup else 'NOT AVAILABLE', 'legacy_init': 'PASS',
                     'private_state_modes': 'PASS', 'nonroot_health_and_executables': 'PASS',
                     'clean_shutdown': 'PASS', 'telegram': 'NOT TESTED', 'release_oci_labels': labels}
     finally:
