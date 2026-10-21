@@ -1,6 +1,6 @@
 # GitHub and GHCR release guide
 
-Status: prepared and locally checked; **GitHub Actions execution and GHCR publication NOT TESTED**. No remote is configured in the preparation checkout. No repository, image or new tag has been published. First proposed automated release: **v1.0.1**, subject to owner approval. Existing annotated `v1.0.0` stays at `f6c49fcd2a52e365c6cfe84395245112a105f929`.
+Status: **Private source publication PASS; hosted initial main/PR CI PASS; GHCR publication NOT TESTED.** The audited sanitized source now has an authorized private GitHub remote. No image or new tag has been published. See [remote evidence and release-control blockers](REMOTE_VALIDATION_REPORT.md). First proposed automated release: **v1.0.1**, subject to owner approval. Existing annotated `v1.0.0` stays at `f6c49fcd2a52e365c6cfe84395245112a105f929`.
 
 **Publication lineage:** use the [sanitized source repository](PUBLIC_REPOSITORY_PLAN.md), which has no original commits or `v1.0.0` tag. The tag identity above belongs only to the retained private development checkout. Follow the [private-first sequence](FIRST_GITHUB_RELEASE.md); original history and old source archives are blocked from publication by the [privacy audit](PUBLICATION_PRIVACY_AUDIT.md).
 

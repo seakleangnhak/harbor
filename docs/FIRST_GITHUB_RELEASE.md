@@ -1,22 +1,27 @@
 # First GitHub release
 
-**Runbook only. Nothing below has run remotely.** All commands operate from the audited sanitized repository, never the original Harbor checkout. Each authorization gate requires explicit owner approval; elapsed time is not approval. Proposed version: **v1.0.1**. Do not create or change `v1.0.0`.
+**Release runbook.** Authorized private source publication and current remote results are recorded in [validation evidence](REMOTE_VALIDATION_REPORT.md). Release-tag, image-publication and public-visibility steps remain unexecuted and require separate approval. All commands operate from the audited sanitized repository, never the original Harbor checkout. Each authorization gate requires explicit owner approval; elapsed time is not approval. Proposed version: **v1.0.1**. Do not create or change `v1.0.0`.
 
 ## 1. Private repository and initial push
 
-After approval of the owner/name, private repository creation and initial push, open a Terminal in the audited export. Replace `YOUR_GITHUB_OWNER` before running commands. Use existing secure GitHub authentication; never place tokens in URLs, commands or repository files.
+Initial private source publication is complete for the current repository. Do not rerun creation or initial-push blocks against it. These blocks describe a fresh owner-approved target.
+
+After approval of the owner/name, private repository creation and initial push, select the audited export explicitly. Replace both `YOUR_GITHUB_OWNER` and `/absolute/path/to/audited/harbor` before running commands. Never rely on the current Terminal directory; an original development checkout must not receive this remote. Use existing secure GitHub authentication; never place tokens in URLs, commands or repository files.
 
 ```sh
+SOURCE_DIR=/absolute/path/to/audited/harbor
 OWNER=YOUR_GITHUB_OWNER
 REPOSITORY=harbor
 (
 set -eu
 test "$OWNER" != YOUR_GITHUB_OWNER
-test "$(git branch --show-current)" = main
-test "$(git rev-list --all --count)" = 1
-test -z "$(git status --porcelain)"
-test -z "$(git remote)"
-test -z "$(git tag --list)"
+test "$(git -C "$SOURCE_DIR" rev-parse --show-toplevel)" = "$SOURCE_DIR"
+test "$(git -C "$SOURCE_DIR" rev-list --max-parents=0 HEAD)" = 15aefb06b3bd813cf14e418611d928c185698274
+test "$(git -C "$SOURCE_DIR" branch --show-current)" = main
+test "$(git -C "$SOURCE_DIR" rev-list --all --count)" = 1
+test -z "$(git -C "$SOURCE_DIR" status --porcelain)"
+test -z "$(git -C "$SOURCE_DIR" remote)"
+test -z "$(git -C "$SOURCE_DIR" tag --list)"
 gh auth status
 gh repo create "$OWNER/$REPOSITORY" --private
 test "$(gh api "repos/$OWNER/$REPOSITORY" --jq .private)" = true
@@ -29,13 +34,14 @@ The final assertion requires private visibility. Each mutating block uses a subs
 (
 set -eu
 test "$(gh api "repos/$OWNER/$REPOSITORY" --jq .private)" = true
-test "$(git branch --show-current)" = main
-test "$(git rev-list --all --count)" = 1
-test -z "$(git status --porcelain)"
-test -z "$(git remote)"
-test -z "$(git tag --list)"
-git remote add origin "https://github.com/$OWNER/$REPOSITORY.git"
-git -c push.followTags=false push -u origin main:main
+test "$(git -C "$SOURCE_DIR" rev-list --max-parents=0 HEAD)" = 15aefb06b3bd813cf14e418611d928c185698274
+test "$(git -C "$SOURCE_DIR" branch --show-current)" = main
+test "$(git -C "$SOURCE_DIR" rev-list --all --count)" = 1
+test -z "$(git -C "$SOURCE_DIR" status --porcelain)"
+test -z "$(git -C "$SOURCE_DIR" remote)"
+test -z "$(git -C "$SOURCE_DIR" tag --list)"
+git -C "$SOURCE_DIR" remote add origin "https://github.com/$OWNER/$REPOSITORY.git"
+git -C "$SOURCE_DIR" -c push.followTags=false push -u origin main:main
 gh run list --repo "$OWNER/$REPOSITORY" --workflow ci.yml --branch main
 )
 ```
@@ -65,15 +71,16 @@ First finish the v1.0.1 changelog with actual release date, review the accepted 
 (
 set -eu
 APPROVED_SHA=REPLACE_WITH_APPROVED_COMMIT_SHA
-test "$(git branch --show-current)" = main
-test "$(git remote get-url origin)" = "https://github.com/$OWNER/$REPOSITORY.git"
+test "$(git -C "$SOURCE_DIR" rev-list --max-parents=0 HEAD)" = 15aefb06b3bd813cf14e418611d928c185698274
+test "$(git -C "$SOURCE_DIR" branch --show-current)" = main
+test "$(git -C "$SOURCE_DIR" remote get-url origin)" = "https://github.com/$OWNER/$REPOSITORY.git"
 test "$(gh api "repos/$OWNER/$REPOSITORY" --jq .private)" = true
-git pull --ff-only origin main
-test -z "$(git status --porcelain)"
-test -z "$(git tag --list v1.0.1)"
-test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
-git tag -a v1.0.1 -m 'Harbor v1.0.1 — audited source and CI integration'
-git -c push.followTags=false push origin refs/tags/v1.0.1:refs/tags/v1.0.1
+git -C "$SOURCE_DIR" pull --ff-only origin main
+test -z "$(git -C "$SOURCE_DIR" status --porcelain)"
+test -z "$(git -C "$SOURCE_DIR" tag --list v1.0.1)"
+test "$(git -C "$SOURCE_DIR" rev-parse HEAD)" = "$APPROVED_SHA"
+git -C "$SOURCE_DIR" tag -a v1.0.1 -m 'Harbor v1.0.1 — audited source and CI integration'
+git -C "$SOURCE_DIR" -c push.followTags=false push origin refs/tags/v1.0.1:refs/tags/v1.0.1
 gh run list --repo "$OWNER/$REPOSITORY" --workflow docker-publish.yml
 )
 ```

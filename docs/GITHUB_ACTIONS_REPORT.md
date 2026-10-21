@@ -1,8 +1,8 @@
 # GitHub Actions qualification
 
-Status: **LOCAL_CI_EQUIVALENT = PASS. Remote GitHub Actions/GHCR execution = NOT TESTED.**
+Status: **LOCAL_CI_EQUIVALENT = PASS. Remote initial main/PR CI = PASS. GHCR = NOT TESTED.** [Actual hosted run evidence](REMOTE_VALIDATION_REPORT.md) records the separately authorized private publication and read-only PR permissions.
 
-Prepared 2026-10-21. No GitHub workflow, GHCR upload, repository publication or new release tag was triggered. Existing `v1.0.0` remains historical; proposed first automated release is `v1.0.1`, subject to separate publication approval.
+Initial local preparation: 2026-10-21, before the later authorized private push. The local results below predate remote execution; no GHCR upload or new release tag has been authorized. Existing `v1.0.0` remains historical; proposed first automated release is `v1.0.1`, subject to separate publication approval.
 
 ## Implemented workflow contract
 
@@ -33,7 +33,9 @@ Fresh local evidence lives under ignored `output/open-source/qa/`; raw private r
 | Local multiarch index, SBOM and provenance | PASS | `output/open-source/docker/final-inspection.json`; index `sha256:dff2846dd26a31ae3622e39b56994cb81949204dacc533597ee6aff54a205afd`, both architecture configurations match smoke images; SPDX/SLSA v1 subjects bind to platform manifests. No registry push. |
 | Actual committed-source release packaging | PASS | `a619068` exported as an untagged 1.0.1 candidate; source/image/manifest SHA256SUMS passed, ARM64 image manifest equals tested candidate. `output/releases/v1.0.1-preparation/release.json`. |
 | README local links/heading anchors and original SVG safety | PASS | `workflows-final.json`; 26 linked local resources exist, README heading anchors valid, three SVG assets contain no active/external resources |
-| Remote GitHub Actions runners, branch protection and environment gate | NOT TESTED | No remote run authorized |
+| Remote GitHub initial main CI | PASS | All five jobs passed at audited root `15aefb0`: [run 39552906176](https://github.com/seakleangnhak/harbor/actions/runs/39552906176). See [remote evidence](REMOTE_VALIDATION_REPORT.md). |
+| Remote PR event CI | PASS | All five jobs passed: [run 39553007811](https://github.com/seakleangnhak/harbor/actions/runs/39553007811). Observed token permissions only Contents/Metadata read; dependency proposal remains unmerged. |
+| Private branch/tag/environment protection | BLOCKED | Current plan rejects branch/ruleset controls; intended reviewer environment is not configured. |
 | GHCR login/upload/visibility, registry manifest, remotely delivered SBOM/provenance | NOT TESTED | No publication authorized |
 
 Fresh-cache native binary SHA-256: `drive` — `6d56b8d4ad20b9fa95f2c51f5db376286e3072b0eb031bb7a3f3e41ef25be608`; `harbor-recovery` — `35916e672c52bf24e92b330214be20a3b453a921fab28a038efab8ea32ace1fd`. The two attempts use separate empty `GOCACHE` directories; only immutable module downloads are shared. Native binary equality does not imply byte-identical cross-architecture images. An initial warm-cache comparison was not accepted as independent evidence; a resource-paused attempt was safely stopped and restarted before the final successful run.

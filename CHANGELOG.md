@@ -7,7 +7,7 @@
 - Read-only pull-request/main CI, default/tagged Go checks, frontend verification, reproducible binaries and credential-free AMD64/ARM64 image smoke checks.
 - Protected stable-tag GHCR design with verified action pins, multiarch builds, SBOM/provenance, OCI labels and built-in token; no publication from PRs or main.
 - Runtime version injection and explicit-version local packaging preserve the immutable v1.0.0 tag. Proposed v1.0.1 is not tagged or published.
-- Remote GitHub Actions/GHCR execution remains NOT TESTED. See [readiness](docs/OPEN_SOURCE_READINESS_REPORT.md) and [publishing guide](docs/GHCR_PUBLISHING_GUIDE.md).
+- Authorized private publication of audited source; hosted main/PR CI passed all five jobs. Release-runbook Git commands now require explicit audited source path and root identity. GHCR execution remains NOT TESTED. See [readiness](docs/OPEN_SOURCE_READINESS_REPORT.md) and [publishing guide](docs/GHCR_PUBLISHING_GUIDE.md).
 
 ## 1.0.0 — 2026-10-21
 
