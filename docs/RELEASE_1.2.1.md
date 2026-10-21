@@ -10,11 +10,13 @@ Installed PDF.js 6.4.299 requires `reason instanceof Error` in its stream cancel
 
 Both bounded PDF-text cancellation sites now supply an `Error`. No broader lifecycle refactor, dependency change or suppression of browser errors. Preview regression adds four open/zoom/close cycles and preserves stack traces/current preview identity for any uncaught exception. Existing 256 Ki-character text limit and preview layout remain unchanged.
 
-Go cache inputs now use `go.sum` plus setup-go's toolchain/platform key. Docker version-only changes no longer discard the compiler cache; Go still validates source, dependencies and compiler flags internally. An existing older cache matches this key; changed source/tests still require fresh compilation and execution.
+Go caches use a toolchain/platform/dependency prefix, a per-commit key and compatible prefix restoration. Each successful new commit saves refreshed build artifacts; an old immutable dependency-only entry can no longer prevent updates. Go still validates source, dependencies and compiler flags internally. Migration may start cold; timing evidence distinguishes cold, partial-cache and warm runs. Test commands, isolation and release gates remain unchanged.
 
 ## Acceptance
 
 Required before tagging: successful hosted main CI for the exact patch commit, all eight browser suites with zero uncaught errors, frontend types/build/tests, Go/race/vet and both architecture image smokes. Required after tagging: GHCR immutable-index/attestation validation and actual published-image checksum/restart/recreation checks on AMD64 and ARM64. Results and digest will be recorded after execution.
+
+**PASS, pre-cache-change candidate:** [CI 39659167222](https://github.com/seakleangnhak/harbor/actions/runs/39659167222), commit `572b0cb`, all four jobs. Backend took 18m with the older dependency-only cache. All eight browser suites passed, including four repeated PDF open/zoom/close cycles in each engine; 110 screenshots and 106 axe checkpoints. Account/preview/transport suites captured no uncaught exceptions; the large-directory suite has no separate exception listener. Reviewed 12 desktop/mobile/light/dark screenshots without critical visual defects. Rolling-cache workflow qualification remains pending for the final source commit.
 
 Existing [v1.2.0 qualification](RELEASE_1.2.0.md) remains scoped to its actual passing runs. New live Telegram throughput/web authorization, live cross-DC retrieval and optional video/MOV playback remain **NOT TESTED** here. Synthetic local-adapter checks are not remote Telegram qualification, an independent audit or public-internet readiness.
 

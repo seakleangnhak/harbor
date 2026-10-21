@@ -4,7 +4,7 @@
 
 - Pass the required `Error` reason when cancelling PDF.js text streams. This prevents late worker messages from enqueueing or closing an already cancelled native stream, observed intermittently in WebKit after v1.2.0 qualification.
 - Add repeated PDF open/zoom/close regression coverage and retain uncaught-error stack diagnostics; no error filtering or preview redesign.
-- Key Go compilation caching on `go.sum` and toolchain version, so unrelated Docker image-version edits no longer invalidate the cache. Go retains its own source/build-flag cache validation.
+- Restore compatible Go caches by toolchain/dependency prefix and save refreshed artifacts per successful commit. Docker version-only edits no longer force cold compilation; immutable old cache entries no longer block updates. Go retains its own source/build-flag validation.
 - Historical v1.2.0 tag and image remain immutable. [Patch qualification](docs/RELEASE_1.2.1.md) records actual status.
 
 ## 1.2.0 — 2026-10-22
