@@ -16,6 +16,8 @@ Local Docker Desktop is unavailable. New account/UI/release changes require fres
 
 Initial hosted candidate run [39646590283](https://github.com/seakleangnhak/harbor/actions/runs/39646590283) exposed a browser-test reload race: the helper checked navigation visibility before React mounted. The helper now waits for attachment. Its tmpfs evidence export also omitted screenshots; streamed export and fail-on-missing artifacts replace the silent path. Both production architecture builds and encrypted checksum/restart/recreation smoke checks passed in that run; browser acceptance requires the corrected rerun.
 
+That run's backend failed in Python synthetic test discovery before executing the Go suites. Only those synthetic test diagnostics are now streamed; arbitrary image/tool output stays redacted. Tooling preparation took 7m16s, including 277.7s Docker image export/load and 31.3s GHA cache export. Native Docker tooling builds remove that export/load path; production architecture builds retain Buildx caching. The rerun must establish actual timings and resolve the test failure.
+
 Baseline: hosted CI run [39584667776](https://github.com/seakleangnhak/harbor/actions/runs/39584667776) took 11m47s. Backend job took 11m43s, including 4m13s for two cold-cache builds. New measurements will be compared honestly; browser checks add coverage absent from that baseline.
 
 ## Upgrade and limitations

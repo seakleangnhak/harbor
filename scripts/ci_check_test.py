@@ -15,6 +15,26 @@ import ci_check as check
 
 
 class CICheckTest(unittest.TestCase):
+    def test_workflows_streams_only_synthetic_test_diagnostics(self):
+        with mock.patch.dict(os.environ, {'ACTIONLINT': ''}), \
+                mock.patch.object(check, 'workflow_policy'), mock.patch.object(check, 'check_readme', return_value={}), \
+                mock.patch.object(check.shutil, 'which', return_value='/synthetic/actionlint'), \
+                mock.patch.object(check, 'run') as linter, mock.patch.object(check.subprocess, 'run') as tests:
+            self.assertEqual(check.workflows()['python_tests'], 'PASS')
+            linter.assert_called_once_with('/synthetic/actionlint')
+            tests.assert_called_once_with([check.sys.executable, '-m', 'unittest', 'discover', '-s', 'scripts', '-p', '*_test.py'],
+                                          cwd=check.ROOT, check=True, timeout=600)
+            tests.side_effect = subprocess.CalledProcessError(1, 'synthetic-tests')
+            with self.assertRaises(subprocess.CalledProcessError):
+                check.workflows()
+
+    def test_generic_tool_failure_keeps_output_redacted(self):
+        response = subprocess.CompletedProcess([], 1, b'synthetic-private-output', b'synthetic-private-error')
+        with mock.patch.object(check.subprocess, 'run', return_value=response) as command, \
+                self.assertRaisesRegex(check.QualificationError, '^docker failed; exit 1$'):
+            check.run('docker', 'inspect', 'fixture')
+        self.assertTrue(command.call_args.kwargs['capture_output'])
+
     def test_verified_ci_binds_latest_main_run_and_returns_safe_receipt(self):
         commit, repository = 'a' * 40, 'Example-Owner/harbor'
         candidate = {'id': 321, 'run_attempt': 2, 'head_sha': commit, 'head_branch': 'main',

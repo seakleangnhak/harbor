@@ -133,6 +133,7 @@ async (page) => {
       await page.keyboard.press('Tab')
       assert(await settings.evaluate(node => node.contains(document.activeElement)), 'Tab escaped modal focus trap')
     }
+    await field('Current password').focus(); await page.getByRole('tooltip').waitFor({ state: 'hidden' })
     await page.keyboard.press('Escape'); await settings.waitFor({ state: 'hidden' })
     await page.waitForFunction(() => ['Settings', 'Your profile and password', 'Open navigation'].includes(document.activeElement?.getAttribute('aria-label') || ''))
     await openSettings()

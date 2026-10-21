@@ -40,21 +40,8 @@ jobs:
             Dockerfile
       - name: Install pinned workflow linter
         run: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-        with:
-          version: v0.38.1
-          driver-opts: image=moby/buildkit@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
       - name: Prepare pinned Go dependencies and test tools
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          target: backend-checks
-          load: true
-          push: false
-          provenance: false
-          tags: harbor:backend-checks
-          cache-from: type=gha,scope=harbor-backend
-          cache-to: type=gha,mode=max,scope=harbor-backend
+        run: docker build --builder default --target backend-checks -t harbor:backend-checks .
       - name: Verify policies and Go offline, then compare deterministic builds
         env:
           HARBOR_VERSION: ${{ inputs.version || '1.2.0' }}

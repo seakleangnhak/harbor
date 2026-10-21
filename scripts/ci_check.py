@@ -199,7 +199,9 @@ def workflows():
     if not actionlint:
         raise QualificationError('Install actionlint v1.7.12 or set ACTIONLINT')
     run(actionlint)
-    run(sys.executable, '-m', 'unittest', 'discover', '-s', 'scripts', '-p', '*_test.py')
+    # Synthetic fixtures only; keep arbitrary image/tool output behind run() redaction.
+    subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'scripts', '-p', '*_test.py'],
+                   cwd=ROOT, check=True, timeout=600)
     return {'workflow_policy': 'PASS', 'actionlint': 'PASS', 'python_tests': 'PASS', **documentation}
 
 
