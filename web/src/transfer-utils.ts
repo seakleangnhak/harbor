@@ -10,6 +10,7 @@ export type Transfer = {
 
 export const runningTransfer = (item: Transfer) => ['queued', 'hashing', 'uploading', 'downloading', 'retrying', 'verifying'].includes(item.state)
 export const transferQueueLimit = 1000
+export const maxUploadChunkSize = 100 * 1024 * 1024
 const unfinishedTransfer = (item: Transfer) => item.state !== 'complete' && item.state !== 'browser'
 
 export function checkTransferCapacity(items: Transfer[], incoming: number): void {
@@ -44,7 +45,7 @@ export async function readCopyRange(response: Response, source: Pick<TransferSou
   const reader = response.body?.getReader()
   try {
     const expected = end - start + 1
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end >= source.size || expected > 64 * 1024 * 1024) throw new Error('Copy range is invalid. Refresh and retry.')
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end >= source.size || expected > maxUploadChunkSize) throw new Error('Copy range is invalid. Refresh and retry.')
     if (response.status !== 206 || response.headers.get('Content-Range') !== `bytes ${start}-${end}/${source.size}` || response.headers.get('X-Content-SHA256')?.toLowerCase() !== source.sha256.toLowerCase()) throw new Error('Source file changed or does not support verified ranges. Nothing was published.')
     if (!reader) throw new Error('Source file stream is unavailable. Retry the copy.')
     const bytes = new Uint8Array(expected)

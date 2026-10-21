@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -66,6 +65,9 @@ func run() error {
 		return initialize(dataDir)
 	}
 	if command == "password" {
+		if err := loadWebConfiguration(dataDir); err != nil {
+			return err
+		}
 		return showPassword(dataDir)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -83,10 +85,31 @@ func run() error {
 		return errors.New("data directory already in use; stop running drive before starting another instance")
 	}
 	if telegramCommand {
+		if err := loadWebConfiguration(dataDir); err != nil {
+			return err
+		}
 		return setupTelegram(ctx, dataDir, command == "telegram-channels", command == "telegram-setup-qr")
 	}
 	if err := requireExistingMetadata(dataDir, false); err != nil {
 		return err
+	}
+	if err := loadWebConfiguration(dataDir); err != nil {
+		return err
+	}
+	if command == "serve" {
+		required, err := needsWebSetup(dataDir)
+		if err != nil {
+			return err
+		}
+		if required {
+			log.Print("Harbor first-run setup ready; open web UI and enter your environment bootstrap token")
+			if err := serveWebSetup(ctx, dataDir); err != nil {
+				return err
+			}
+			if err := loadWebConfiguration(dataDir); err != nil {
+				return err
+			}
+		}
 	}
 	key, err := loadKey(dataDir)
 	if err != nil {
@@ -168,21 +191,8 @@ func run() error {
 		}
 		return nil
 	}
-	secure := false
-	if v := os.Getenv("DRIVE_SECURE_COOKIES"); v != "" {
-		secure, err = strconv.ParseBool(v)
-		if err != nil {
-			return errors.New("DRIVE_SECURE_COOKIES must be true or false")
-		}
-	}
-	allowRemote := false
-	if value := os.Getenv("DRIVE_ALLOW_REMOTE_HTTP"); value != "" {
-		allowRemote, err = strconv.ParseBool(value)
-		if err != nil {
-			return errors.New("DRIVE_ALLOW_REMOTE_HTTP must be true or false")
-		}
-	}
-	if err = validateListenConfig(env("DRIVE_ADDR", "127.0.0.1:8080"), secure, allowRemote); err != nil {
+	secure, err := listenPolicy()
+	if err != nil {
 		return err
 	}
 	app, err := api.New(api.Config{Version: buildVersion, DB: db, Storage: engine, OwnerPassword: password, SecureCookies: secure, StaticDir: env("DRIVE_STATIC_DIR", "web/dist"), Adapter: adapter, TelegramConfigured: adapter == "telegram", StorageStatus: storageStatus})
@@ -203,7 +213,7 @@ func run() error {
 			log.Print("Copy worker stopped; pending jobs remain recoverable")
 		}
 	}()
-	server := &http.Server{Addr: env("DRIVE_ADDR", "127.0.0.1:8080"), Handler: app.Handler(), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	server := &http.Server{Addr: env("DRIVE_ADDR", "127.0.0.1:8080"), Handler: withSetupStatus(app.Handler()), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	done := make(chan struct{})
 	go func() {
 		select {
@@ -233,8 +243,10 @@ func env(name, fallback string) string {
 }
 
 func initialize(dataDir string) error {
-	if _, err := os.Stat(filepath.Join(dataDir, "drive.db")); !errors.Is(err, os.ErrNotExist) {
-		return errors.New("existing metadata found; initialization cannot change owner password")
+	for _, name := range []string{"drive.db", "storage.json", "setup"} {
+		if _, err := os.Lstat(filepath.Join(dataDir, name)); !errors.Is(err, os.ErrNotExist) {
+			return errors.New("existing initialization found; initialization cannot change owner password")
+		}
 	}
 	if _, err := loadKey(dataDir); err != nil {
 		return err

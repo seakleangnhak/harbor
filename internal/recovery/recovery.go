@@ -24,6 +24,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 	"modernc.org/sqlite"
+	"private-drive/internal/storage"
 )
 
 const (
@@ -228,7 +229,7 @@ func chunkExport(ctx context.Context, db *sql.DB) ([]byte, error) {
 			SHA256   string `json:"sha256"`
 			Ref      string `json:"ref"`
 		}
-		if err := rows.Scan(&row.UploadID, &row.Index, &row.Size, &row.SHA256, &row.Ref); err != nil || row.Index < 0 || row.Size <= 0 || row.Size > 64<<20 || !hexDigest.MatchString(row.SHA256) || len(row.Ref) > 16384 {
+		if err := rows.Scan(&row.UploadID, &row.Index, &row.Size, &row.SHA256, &row.Ref); err != nil || row.Index < 0 || row.Size <= 0 || row.Size > storage.MaxChunkSize || !hexDigest.MatchString(row.SHA256) || len(row.Ref) > 16384 {
 			return nil, errors.New("invalid chunk manifest in metadata")
 		}
 		if err := encoder.Encode(row); err != nil || out.Len() > maxManifestBytes {
@@ -252,7 +253,7 @@ func localBlobs(ctx context.Context, db *sql.DB, data string) ([]sourceFile, err
 	for rows.Next() {
 		var ref string
 		var size int64
-		if err := rows.Scan(&ref, &size); err != nil || !blobName.MatchString(ref) || size <= 0 || size > 64<<20 {
+		if err := rows.Scan(&ref, &size); err != nil || !blobName.MatchString(ref) || size <= 0 || size > storage.MaxChunkSize {
 			return nil, errors.New("invalid local chunk reference")
 		}
 		path := filepath.Join(data, "blobs", ref)
@@ -308,6 +309,21 @@ func Backup(ctx context.Context, opts BackupOptions) error {
 	b, err := storageBinding(rawBinding, key)
 	if err != nil {
 		return err
+	}
+	// Web setup keeps one atomically activated private bundle on the data volume.
+	webConfig := filepath.Join(data, "setup", "config.env")
+	if _, err := os.Lstat(webConfig); err == nil {
+		if opts.ConfigFile == "" {
+			opts.ConfigFile = webConfig
+		}
+		if opts.OwnerPasswordFile == "" {
+			opts.OwnerPasswordFile = filepath.Join(data, "setup", "owner-password")
+		}
+		if opts.SessionFile == "" {
+			opts.SessionFile = filepath.Join(data, "setup", "telegram.session")
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return errors.New("web setup recovery source unavailable")
 	}
 	config, err := backupConfig(opts.ConfigFile, b)
 	if err != nil {
@@ -524,7 +540,7 @@ func allowedSize(name string, size int64) bool {
 	case "backup-manifest.json", "chunk-manifests.jsonl":
 		return size <= maxManifestBytes
 	default:
-		return strings.HasPrefix(name, "blobs/") && blobName.MatchString(strings.TrimPrefix(name, "blobs/")) && size > 32 && size <= (64<<20)+32
+		return strings.HasPrefix(name, "blobs/") && blobName.MatchString(strings.TrimPrefix(name, "blobs/")) && size > 32 && size <= storage.MaxChunkSize+32
 	}
 }
 

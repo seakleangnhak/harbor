@@ -24,8 +24,8 @@ func benchmarkEngine(b *testing.B) (*Engine, *benchmarkStore, []byte) {
 	b.Helper()
 	store := &benchmarkStore{}
 	e, _ := testEngine(b, b.TempDir(), store, nil)
-	e.chunkSize = DefaultChunkSize
-	return e, store, bytes.Repeat([]byte{0xa7}, int(DefaultChunkSize))
+	e.chunkSize = 4 << 20
+	return e, store, bytes.Repeat([]byte{0xa7}, int(e.chunkSize))
 }
 
 func BenchmarkEnginePutChunk4MiB(b *testing.B) {

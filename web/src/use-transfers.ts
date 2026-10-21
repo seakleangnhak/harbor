@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api, contentUrl } from './api'
 import { errorMessage, hashFile, managedDownloadLimit, missingChunks, readVerifiedDownload, transferTiming, validateName } from './utils'
-import { checkTransferCapacity, readCopyRange, restoreTransfers, storedTransfers, transferDelay, type Transfer, type TransferSource } from './transfer-utils'
+import { checkTransferCapacity, maxUploadChunkSize, readCopyRange, restoreTransfers, storedTransfers, transferDelay, type Transfer, type TransferSource } from './transfer-utils'
 import type { DriveNode, Upload } from './types'
 
 export type { Transfer, TransferState } from './transfer-utils'
@@ -80,7 +80,7 @@ export function useTransfers(onComplete: () => void) {
         const session = transfer!.id ? await api.upload(transfer!.id) : await api.createUpload({ name: transfer!.name, size: transfer!.size, mime_type: transfer!.mime_type, parent_id: transfer!.parent_id, sha256: digest }, signal)
         update(transfer!.key, { id: session.id })
         signal.throwIfAborted()
-        if (session.size !== transfer!.size || !Number.isSafeInteger(session.chunk_size) || session.chunk_size < 1 || session.chunk_size > 64 * 1024 * 1024 || session.total_chunks !== Math.ceil(session.size / session.chunk_size) || (session.sha256 && session.sha256.toLowerCase() !== digest.toLowerCase())) throw new Error('Upload metadata differs from this file. Cancel and start a new transfer.')
+        if (session.size !== transfer!.size || !Number.isSafeInteger(session.chunk_size) || session.chunk_size < 1 || session.chunk_size > maxUploadChunkSize || session.total_chunks !== Math.ceil(session.size / session.chunk_size) || (session.sha256 && session.sha256.toLowerCase() !== digest.toLowerCase())) throw new Error('Upload metadata differs from this file. Cancel and start a new transfer.')
         const started = performance.now(), startedBytes = session.received_bytes
         let retries = 0
         update(transfer!.key, { state: 'uploading', received_bytes: session.received_bytes, bytes_per_second: undefined, eta_seconds: undefined, retries })

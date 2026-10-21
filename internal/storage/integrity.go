@@ -172,7 +172,7 @@ func CheckIntegrity(ctx context.Context, db *sql.DB) (IntegrityReport, error) {
 		}
 	}
 	for _, u := range uploads {
-		if u.size < 0 || u.chunkSize < 1 || u.chunkSize > 64<<20 || u.size/max(u.chunkSize, 1) > 1<<31-2 {
+		if u.size < 0 || u.chunkSize < 1 || u.chunkSize > MaxChunkSize || u.size/max(u.chunkSize, 1) > 1<<31-2 {
 			report.issue("invalid_upload_geometry", u.id, "error")
 			continue
 		}

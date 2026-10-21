@@ -1,5 +1,6 @@
 services:
   drive:
+    image: harbor:local
     build:
       context: .
       args:
@@ -7,7 +8,8 @@ services:
     ports:
       - "127.0.0.1:${DRIVE_PORT:-8080}:8080"
     environment:
-      DRIVE_STORAGE: ${DRIVE_STORAGE:-local}
+      DRIVE_SETUP_TOKEN: ${DRIVE_SETUP_TOKEN:-}
+      DRIVE_STORAGE: ${DRIVE_STORAGE:-}
       DRIVE_SECURE_COOKIES: ${DRIVE_SECURE_COOKIES:-false}
       DRIVE_ALLOW_REMOTE_HTTP: "true"
       TELEGRAM_APP_ID: ${TELEGRAM_APP_ID:-}

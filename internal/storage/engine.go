@@ -50,7 +50,7 @@ func New(cfg Config) (*Engine, error) {
 	if cfg.ChunkSize == 0 {
 		cfg.ChunkSize = DefaultChunkSize
 	}
-	if cfg.ChunkSize < 1 || cfg.ChunkSize > 64<<20 {
+	if cfg.ChunkSize < 1 || cfg.ChunkSize > MaxChunkSize {
 		return nil, fmt.Errorf("%w: chunk size out of bounds", domain.ErrInvalid)
 	}
 	block, err := aes.NewCipher(cfg.Key)
@@ -79,7 +79,15 @@ CREATE TABLE IF NOT EXISTS storage_chunks (
 	if err != nil {
 		return nil, err
 	}
-	return &Engine{db: cfg.DB, backend: cfg.Backend, aead: aead, chunkSize: cfg.ChunkSize, slots: make(chan struct{}, 4), locks: make(map[string]*uploadLock)}, nil
+	var persistedChunkSize int64
+	if err := cfg.DB.QueryRow(`SELECT COALESCE(MAX(chunk_size),0) FROM storage_uploads`).Scan(&persistedChunkSize); err != nil {
+		return nil, err
+	}
+	// Readers keep one verified chunk until consumed/closed. Share a 256 MiB
+	// active-buffer budget with uploads/finalization, including older manifests.
+	largestChunk := max(cfg.ChunkSize, min(persistedChunkSize, MaxChunkSize))
+	slots := min(4, int((256<<20)/largestChunk))
+	return &Engine{db: cfg.DB, backend: cfg.Backend, aead: aead, chunkSize: cfg.ChunkSize, slots: make(chan struct{}, slots), locks: make(map[string]*uploadLock)}, nil
 }
 
 func (e *Engine) lock(ctx context.Context, id string) (func(), error) {
@@ -147,7 +155,7 @@ func (e *Engine) Status(ctx context.Context, id string) (domain.Upload, error) {
 	if err != nil {
 		return u, err
 	}
-	if u.Size < 0 || u.ChunkSize < 1 || u.ChunkSize > 64<<20 || u.Size/u.ChunkSize > 1<<31-2 {
+	if u.Size < 0 || u.ChunkSize < 1 || u.ChunkSize > MaxChunkSize || u.Size/u.ChunkSize > 1<<31-2 {
 		return u, domain.ErrIntegrity
 	}
 	u.CreatedAt, err = time.Parse(time.RFC3339Nano, created)
@@ -253,7 +261,9 @@ func (e *Engine) PutChunk(ctx context.Context, id string, index int, body io.Rea
 		return u, err
 	}
 	defer func() { <-e.slots }()
-	buffer := bytes.NewBuffer(make([]byte, 0, expectedSize+1+bytes.MinRead))
+	headerSize := 4 + e.aead.NonceSize()
+	sealed := make([]byte, headerSize, int64(headerSize)+expectedSize+1+bytes.MinRead+int64(e.aead.Overhead()))
+	buffer := bytes.NewBuffer(sealed[headerSize:])
 	_, err = buffer.ReadFrom(io.LimitReader(body, expectedSize+1))
 	if err != nil {
 		return u, err
@@ -277,7 +287,6 @@ func (e *Engine) PutChunk(ctx context.Context, id string, index int, body io.Rea
 	if !errors.Is(err, sql.ErrNoRows) {
 		return u, err
 	}
-	sealed := make([]byte, 4+e.aead.NonceSize(), 4+e.aead.NonceSize()+len(data)+e.aead.Overhead())
 	copy(sealed, "HD01")
 	nonce := sealed[4:]
 	if _, err = rand.Read(nonce); err != nil {
@@ -311,7 +320,7 @@ func (e *Engine) plaintext(ctx context.Context, id string, c chunk) ([]byte, err
 	if len(sealed) < 4+n+e.aead.Overhead() || string(sealed[:4]) != "HD01" || int64(len(sealed)) != 4+int64(n)+c.size+int64(e.aead.Overhead()) {
 		return nil, domain.ErrIntegrity
 	}
-	data, err := e.aead.Open(nil, sealed[4:4+n], sealed[4+n:], chunkAAD(id, c.index))
+	data, err := e.aead.Open(sealed[4+n:4+n], sealed[4:4+n], sealed[4+n:], chunkAAD(id, c.index))
 	if err != nil || fmt.Sprintf("%x", sha256.Sum256(data)) != c.hash {
 		return nil, domain.ErrIntegrity
 	}

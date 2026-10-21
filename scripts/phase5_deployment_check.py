@@ -241,12 +241,13 @@ def qualify(candidate, previous, port, output):
         client = Client(base, password_file)
         try:
             parent = ''
+            diagnostics, _ = client.request('GET', '/diagnostics')
             for name in ('Phase 5 deployment', 'Nested', 'Deep'):
                 folder, _ = client.request('POST', '/folders', {'name': name, 'parent_id': parent}, expect=201)
                 parent = folder['id']
                 folder_ids.append(parent)
             for name in ('small.txt', 'small.png', 'small.pdf', 'multipart.bin'):
-                data, mime = fixture(name, 4 << 20)
+                data, mime = fixture(name, diagnostics['chunk_size'])
                 digest = hashlib.sha256(data).hexdigest()
                 upload, _ = client.request('POST', '/uploads', {'name': name, 'parent_id': parent, 'size': len(data), 'mime_type': mime, 'sha256': digest}, expect=201)
                 for index in range(upload['total_chunks']):

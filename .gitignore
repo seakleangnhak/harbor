@@ -44,6 +44,9 @@ owner-password
 *backup-password*
 *recovery-password*
 storage.json
+config.env
+setup.pending/
+setup/
 browser-state.json
 test-secrets/
 test-credentials/

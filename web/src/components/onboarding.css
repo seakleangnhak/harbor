@@ -1,0 +1,100 @@
+.setup-page { min-height: 100dvh; background: var(--sidebar); padding: 40px 32px; }
+.setup-shell { max-width: 1040px; margin: 0 auto; display: grid; grid-template-columns: 1fr minmax(0, 480px); gap: 40px 80px; }
+.setup-header { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; }
+.setup-header .brand { font-size: 27px; }
+.setup-guide { padding: 40px 0; }
+.setup-guide h2 { font: 400 44px/1.18 Georgia, "Times New Roman", serif; letter-spacing: -1.3px; margin-top: 16px; }
+.setup-guide h2 em { color: var(--accent); font-weight: 400; }
+.setup-guide > p { max-width: 288px; color: var(--muted); font-size: 14px; line-height: 1.8; margin-top: 20px; }
+.setup-guide > ol { list-style: none; padding: 0; margin: 36px 0; display: grid; gap: 20px; }
+.setup-guide > ol > li { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; }
+.setup-step-number { display: flex; width: 28px; height: 28px; flex-shrink: 0; align-items: center; justify-content: center; border: 1px solid var(--border-strong); border-radius: 50%; font-size: 11px; font-variant-numeric: tabular-nums; }
+.setup-current { font-weight: 600; color: var(--text) !important; }
+.setup-current .setup-step-number { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.setup-done .setup-step-number { background: var(--accent-soft); border-color: var(--border-strong); color: var(--accent); }
+.setup-assurance { display: flex; align-items: flex-start; gap: 12px; max-width: 296px; padding-top: 24px; border-top: 1px solid var(--border-strong); color: var(--secondary); }
+.setup-assurance > svg { color: var(--accent); flex-shrink: 0; margin-top: 2px; }
+.setup-assurance p { font-size: 12px; line-height: 1.8; }
+.setup-card { min-width: 0; align-self: start; padding: 32px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface); box-shadow: 0 8px 32px #233a2008; }
+.setup-card-heading { margin-bottom: 28px; }
+.setup-card-heading h1 { font-size: 26px; line-height: 1.25; letter-spacing: -.7px; font-weight: 600; margin-top: 12px; outline: none; }
+.setup-card-heading h1:focus-visible { outline: none; }
+.setup-card-heading > p { color: var(--muted); font-size: 13px; line-height: 1.7; margin-top: 10px; }
+.setup-form { display: flex; flex-direction: column; gap: 8px; }
+.setup-form label, .setup-advanced label { display: block; font-size: 12px; font-weight: 550; color: var(--text); }
+.setup-form label:not(:first-child) { margin-top: 12px; }
+.setup-form input, .setup-advanced input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--control-border); border-radius: 7px; background: var(--surface); color: var(--text); }
+.setup-form input[disabled] { color: var(--muted); }
+.setup-form .password-input { margin: 0; }
+.setup-form .password-input input { border: 0; background: transparent; }
+.setup-help { color: var(--muted); font-size: 12px; line-height: 1.75; overflow-wrap: anywhere; }
+.setup-help code { font-size: 11px; color: var(--secondary); }
+.setup-help a { text-decoration: underline; text-underline-offset: 3px; color: var(--accent); }
+.setup-primary { width: 100%; justify-content: space-between; min-height: 44px; margin-top: 20px; font-size: 13px; }
+.setup-primary:has(.spin) { justify-content: center; }
+.setup-status { color: var(--accent); font-size: 12px; display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--accent-soft); border-radius: 7px; margin-bottom: 8px; }
+.setup-storage { min-width: 0; border: 0; padding: 0; margin: 0 0 24px; display: grid; gap: 8px; }
+.setup-provider { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border-strong); border-radius: 8px; cursor: pointer; color: var(--secondary); }
+.setup-provider:hover { background: var(--sidebar); }
+.setup-provider input { appearance: auto; accent-color: var(--accent); margin: 0; width: 16px; height: 16px; flex-shrink: 0; }
+.setup-provider svg { flex-shrink: 0; color: var(--accent); }
+.setup-provider > span { display: flex; flex-direction: column; gap: 3px; }
+.setup-provider strong { color: var(--text); font-size: 12px; font-weight: 550; }
+.setup-provider small { color: var(--muted); font-size: 11px; }
+.setup-provider-selected { border-color: var(--accent); background: var(--accent-soft); }
+.setup-provider-selected small { color: var(--secondary); }
+.setup-provider-selected:hover { background: var(--accent-soft); }
+.setup-storage:disabled .setup-provider { cursor: default; }
+.setup-storage:disabled .setup-provider:not(.setup-provider-selected) { opacity: .55; }
+.setup-telegram-form > .setup-help:first-child { margin-bottom: 8px; }
+.setup-advanced { margin-top: 12px; }
+.setup-advanced summary { cursor: pointer; color: var(--secondary); font-size: 12px; min-height: 36px; padding: 8px 0; }
+.setup-advanced summary > span { color: var(--muted); }
+.setup-advanced label { margin: 8px 0; }
+.setup-local > p { color: var(--muted); font-size: 13px; line-height: 1.8; }
+.setup-verified { text-align: center; padding-top: 4px; }
+.setup-verified > svg { color: var(--accent); margin-bottom: 16px; }
+.setup-verified h2, .setup-authorization h2 { font-size: 18px; font-weight: 550; letter-spacing: -.3px; }
+.setup-verified > p { font-size: 12px; color: var(--muted); line-height: 1.8; margin-top: 12px; }
+.setup-authorization > .button-ghost { display: flex; margin: 20px auto 0; }
+.setup-poll-error > .button { margin-top: 12px; }
+.setup-authorization > h2 { margin: 20px 0 16px; }
+.setup-qr { display: flex; justify-content: center; align-items: center; min-height: 240px; border: 1px solid var(--border); border-radius: 8px; background: #fff; padding: 8px; }
+.setup-qr img { display: block; width: 224px; height: 224px; max-width: 100%; object-fit: contain; image-rendering: pixelated; }
+.setup-qr > div { display: flex; flex-direction: column; align-items: center; gap: 16px; color: #245b48; font-size: 12px; }
+.setup-qr-steps { padding-left: 20px; margin: 0 0 16px; display: grid; gap: 8px; color: var(--secondary); font-size: 12px; line-height: 1.7; }
+.setup-qr-steps strong { font-weight: 550; }
+.setup-warning { display: flex; align-items: flex-start; gap: 8px; color: var(--secondary); background: var(--subtle); border: 1px solid var(--border); padding: 12px; border-radius: 7px; font-size: 11px; line-height: 1.7; margin-bottom: 12px; }
+.setup-warning > svg { flex-shrink: 0; margin-top: 2px; color: var(--accent); }
+.setup-state-icon { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); margin-bottom: 12px; }
+.setup-review dl { margin: 12px 0 24px; }
+.setup-review dl > div { display: flex; flex-direction: column; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.setup-review dt { color: var(--muted); font-size: 11px; }
+.setup-review dd { margin: 0; font-size: 13px; font-weight: 500; }
+.setup-review > .button-ghost { margin-top: 12px; }
+.setup-footer { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 8px; border-top: 1px solid var(--border); padding-top: 24px; color: var(--muted); font-size: 11px; }
+@media (max-width: 960px) {
+  .setup-shell { gap: 32px; grid-template-columns: 1fr minmax(0, 440px); }
+  .setup-guide h2 { font-size: 36px; }
+  .setup-guide > p { font-size: 13px; }
+}
+@media (max-width: 760px) {
+  .setup-page { padding: 24px 20px; }
+  .setup-shell { max-width: 480px; display: flex; flex-direction: column; gap: 24px; }
+  .setup-header > .eyebrow { font-size: 9px; letter-spacing: .8px; }
+  .setup-guide { padding: 0; }
+  .setup-guide > .eyebrow, .setup-guide > h2, .setup-guide > p, .setup-assurance { display: none; }
+  .setup-guide > ol { display: flex; gap: 12px; justify-content: space-between; margin: 0; }
+  .setup-guide > ol > li { flex-direction: column; align-items: center; gap: 8px; font-size: 10px; text-align: center; }
+  .setup-card { width: 100%; padding: 28px 24px; }
+  .setup-card-heading h1 { font-size: 24px; }
+  .setup-form input, .setup-form .password-input input { font-size: 16px; }
+  .setup-primary, .setup-authorization > .button, .setup-review > .button { min-height: 48px; }
+  .setup-footer { font-size: 10px; padding-top: 20px; }
+}
+@media (max-width: 360px) {
+  .setup-page { padding: 20px 12px; }
+  .setup-card { padding: 24px 20px; }
+  .setup-header > .eyebrow { display: none; }
+  .setup-guide > ol { gap: 8px; }
+}

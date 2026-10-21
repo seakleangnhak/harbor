@@ -12,6 +12,15 @@ Build a private single-owner drive. Keep changes small, inspect existing code, v
 
 ## Contracts and security
 
+### Web onboarding ownership override
+
+- Coordinator: `cmd/drive/`, `web/src/App.tsx`, deployment/config/docs, integration and verification. Work in sanitized public export only. Preserve original repository, running deployments, sessions and data. No push, tag or remote deployment in this task.
+- Onboarding backend agent: new `internal/onboarding/` only. Guarded setup HTTP handler; injectable Telegram setup and commit callbacks; same-origin, short-lived token authorization, bounded requests and safe error responses. No main/storage/frontend edits.
+- Storage agent: `internal/storage/` only. New uploads use 100 MiB chunks; old manifests retain their own geometry. Bound memory/concurrency and ciphertext limits, Telegram multipart correctness and regression tests. Do not change public Service interface without agreement.
+- Frontend agent: new `web/src/components/Onboarding.tsx`, `web/src/onboarding.ts`, onboarding tests/CSS and existing transfer validation files only. Coordinator wires App. Keep tokens/Telegram credentials in memory only; no URL/localStorage/log secrets. Preserve existing UI.
+- Agents do not commit or inspect real credentials. Use synthetic fixtures. Security guidance execution checks run in isolated no-network sandboxes with explicit environments, read-only source/toolchain and bounded resources; report commands needed to coordinator rather than running unsandboxed target code.
+- Setup contract: `GET /api/v1/setup/status` returns only `{required:boolean}` publicly; token-guarded endpoints use `X-Harbor-Setup-Token`, never query parameters. `POST /setup/account` `{password}`; `POST /setup/telegram` `{app_id,app_hash,channel_link,channel_id?}` starts QR flow; `GET /setup/telegram` returns `{state,qr_image?,error?,error_code?}`; `POST /setup/telegram/password` `{password}`; `DELETE /setup/telegram` cancels; `POST /setup/complete` `{adapter:"telegram"|"local"}` commits only verified configuration. Setup disabled permanently when metadata/storage binding exists. Persist private config/session outside SQLite and use existing auth after completion.
+
 ### Open-source preparation ownership override
 
 - Agent A: `README.md`, `docs/assets/` only. Original SVG branding and visually reviewed, sanitized demo screenshots; no runtime UI changes. No invented repository URL or published-image claim.
@@ -68,7 +77,7 @@ Build a private single-owner drive. Keep changes small, inspect existing code, v
 - Shared status: `domain.StorageStatus{State, LastCheckedAt, RetryCount}`; Telegram `Status() domain.StorageStatus`; API `Config.StorageStatus func() domain.StorageStatus`; diagnostics adds `storage_connection`. No raw Telegram errors, account/channel identity or credentials in HTTP status.
 - With a channel link, `TelegramConfig.ChannelID` is an optional expected positive MTProto ID. Resolve link and compare before any upload. Manual access hash remains legacy-only. Root normalizes configured Bot API channel IDs.
 
-Read `docs/API_CONTRACT.md` and `docs/ARCHITECTURE.md` before implementation. All API resources except health and login require owner session. Same-origin mutation checks, HttpOnly SameSite cookie, server-side session revocation, bounded request bodies, parameterized SQL, safe filenames, and folder-cycle checks are required. Never send Telegram credentials/session to browser. No public signup or sharing.
+Read `docs/API_CONTRACT.md` and `docs/ARCHITECTURE.md` before implementation. Normal private API resources require owner session; first-run setup uses the separate bootstrap-token gate described above. Same-origin mutation checks, HttpOnly SameSite cookie, server-side session revocation, bounded request bodies, parameterized SQL, safe filenames, and folder-cycle checks are required. Never return saved Telegram credentials/session to the browser. Owner-authorized web setup accepts credentials over HTTPS or loopback only. No public signup or sharing.
 
 Use AES-256-GCM with fresh nonce and chunk identity as authenticated data. Verify plaintext SHA-256 and reject corrupted content. Keep keys outside SQLite and version control. Never silently switch adapters on a configured drive. Local adapter must work without Telegram credentials. Persistent upload state must tolerate retries and restart.
 

@@ -15,6 +15,9 @@ import { DeleteDialog, MoveDialog, NameDialog } from './components/ActionDialogs
 import { Button } from './components/ui'
 import { copyName, preferenceKey, viewPreference } from './workspace'
 import { topLevelSelection } from './file-manager'
+import { setupStatus } from './onboarding'
+
+const Onboarding = lazy(() => import('./components/Onboarding').then(module => ({ default: module.Onboarding })))
 
 const Settings = lazy(() => import('./components/Settings').then(module => ({ default: module.Settings })))
 const Help = lazy(() => import('./components/Settings').then(module => ({ default: module.Help })))
@@ -26,12 +29,16 @@ function preferences(listing: Listing) {
 
 export default function App() {
   const queryClient = useQueryClient()
-  const session = useQuery({ queryKey: ['session'], queryFn: api.session, retry: false })
+  const setup = useQuery({ queryKey: ['setup'], queryFn: ({ signal }) => setupStatus(signal), staleTime: Infinity, retry: 3 })
+  const session = useQuery({ queryKey: ['session'], queryFn: api.session, retry: false, enabled: setup.data?.required === false })
   useEffect(() => {
     const unauthorized = () => { queryClient.setQueryData(['session'], null) }
     window.addEventListener('harbor:unauthorized', unauthorized)
     return () => window.removeEventListener('harbor:unauthorized', unauthorized)
   }, [queryClient])
+  if (setup.isPending) return <div className="app-loading"><span className="loading-brand">H</span><p>Opening your space…</p></div>
+  if (setup.error) return <div className="connection-error"><CircleAlert size={30} /><h1>Harbor is out of reach</h1><p>{errorMessage(setup.error)}</p><Button onClick={() => { void setup.refetch() }}>Try again</Button></div>
+  if (setup.data?.required) return <Suspense fallback={<div className="app-loading">Preparing setup…</div>}><Onboarding onComplete={() => { void queryClient.invalidateQueries({ queryKey: ['setup'] }) }} /></Suspense>
   if (session.isPending) return <div className="app-loading"><span className="loading-brand">H</span><p>Opening your space…</p></div>
   if (session.error && !(session.error instanceof ApiError && session.error.status === 401)) return <div className="connection-error"><CircleAlert size={30} /><h1>Harbor is out of reach</h1><p>{errorMessage(session.error)}</p><Button onClick={() => { void session.refetch() }}>Try again</Button></div>
   if (!session.data) return <Login onLogin={() => { void queryClient.invalidateQueries({ queryKey: ['session'] }) }} />

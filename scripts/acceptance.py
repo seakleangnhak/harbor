@@ -96,7 +96,9 @@ def run(binary):
             nested, _ = drive.request('POST', '/folders', {'name': 'Nested', 'parent_id': folder['id']}, expect=201)
             drive.request('PATCH', '/nodes/' + folder['id'], {'parent_id': nested['id']}, expect=409)
             drive.request('POST', '/folders', {'name': 'acceptance', 'parent_id': ''}, expect=409)
-            content = bytes(range(256)) * 32769 + b'Harbor checksum fixture'
+            # Exercise the active application geometry, including 100 MiB chunks.
+            diagnostics, _ = drive.request('GET', '/diagnostics')
+            content = bytes(range(256)) * (diagnostics['chunk_size'] // 256 + 1) + b'Harbor checksum fixture'
             digest = hashlib.sha256(content).hexdigest()
             upload, _ = drive.request('POST', '/uploads', {'name': 'roundtrip.bin', 'parent_id': nested['id'],
                                                         'size': len(content), 'mime_type': 'application/octet-stream', 'sha256': digest}, expect=201)

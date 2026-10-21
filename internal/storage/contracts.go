@@ -8,9 +8,14 @@ import (
 	"private-drive/internal/domain"
 )
 
-const DefaultChunkSize int64 = 4 << 20
+const (
+	DefaultChunkSize  int64 = 100 << 20
+	MaxChunkSize      int64 = 100 << 20
+	maxCiphertextSize       = MaxChunkSize + 4 + 12 + 16 // HD01, GCM nonce and tag.
+)
 
 // BlobStore receives encrypted bytes only. References must survive restarts.
+// Get returns caller-owned bytes, permitting authenticated decryption in place.
 type BlobStore interface {
 	Put(ctx context.Context, key string, ciphertext []byte) (string, error)
 	Get(ctx context.Context, ref string) ([]byte, error)

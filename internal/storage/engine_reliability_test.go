@@ -455,7 +455,8 @@ func TestPersistedUploadGeometryBounds(t *testing.T) {
 		{"negative file size", -1, 8, true},
 		{"too many chunks", 1<<31 - 1, 1, true},
 		{"empty file", 0, DefaultChunkSize, false},
-		{"maximum chunk size", 64 << 20, 64 << 20, false},
+		{"maximum chunk size", MaxChunkSize, MaxChunkSize, false},
+		{"over maximum chunk size", MaxChunkSize + 1, MaxChunkSize + 1, true},
 		{"maximum chunk count with remainder", (1<<31-2)*8 + 7, 8, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

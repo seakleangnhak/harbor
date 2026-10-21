@@ -35,7 +35,7 @@ func (s *LocalStore) Put(ctx context.Context, key string, ciphertext []byte) (st
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if !isHexID(key) {
+	if !isHexID(key) || len(ciphertext) == 0 || int64(len(ciphertext)) > maxCiphertextSize {
 		return "", fmt.Errorf("%w: invalid blob key", domain.ErrInvalid)
 	}
 	ref := key + "-" + domain.NewID()
@@ -90,7 +90,7 @@ func (s *LocalStore) Get(ctx context.Context, ref string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() || info.Size() > (64<<20)+64 {
+	if !info.Mode().IsRegular() || info.Size() > maxCiphertextSize {
 		return nil, domain.ErrIntegrity
 	}
 	return os.ReadFile(path)

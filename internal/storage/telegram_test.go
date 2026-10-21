@@ -316,7 +316,7 @@ func TestTelegramRetryBoundAndStatusLifecycle(t *testing.T) {
 	store.verified = true
 	store.statusMu.Unlock()
 	store.connectionState(telegram.ConnectionStateReady)
-	ctx, finish, onRetry := store.operationContext(context.Background())
+	ctx, finish, onRetry := store.operationContext(context.Background(), 0)
 	deadline, ok := ctx.Deadline()
 	if !ok || time.Until(deadline) > 2*time.Minute || time.Until(deadline) < 119*time.Second {
 		t.Fatalf("operation deadline not bounded: %v %v", deadline, ok)
@@ -369,7 +369,7 @@ func TestTelegramStatusConcurrentOperationsAndCancellation(t *testing.T) {
 	var workers sync.WaitGroup
 	for range 8 {
 		workers.Go(func() {
-			ctx, finish, retry := store.operationContext(context.Background())
+			ctx, finish, retry := store.operationContext(context.Background(), 0)
 			defer finish()
 			for range 25 {
 				retry()

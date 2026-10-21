@@ -101,7 +101,7 @@ def readiness(base_url, password_file):
             raise QualificationError('Authenticated Telegram readiness check failed')
         retries = connection.get('retry_count')
         chunk_size = diagnostics.get('chunk_size')
-        if type(retries) is not int or retries < 0 or type(chunk_size) is not int or not 1 <= chunk_size <= 8 << 20:
+        if type(retries) is not int or retries < 0 or type(chunk_size) is not int or not 1 <= chunk_size <= 100 << 20:
             raise QualificationError('Invalid bounded diagnostic metrics')
         return {'liveness': 'PASS', 'unauthenticated_rejection': 'PASS', 'authenticated_readiness': 'PASS',
                 'adapter': 'telegram', 'state': 'connected', 'database': 'ok', 'encryption': 'AES-256-GCM',

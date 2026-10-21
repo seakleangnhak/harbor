@@ -144,7 +144,7 @@ func telegramSetupClient(cfg TelegramConfig) (*telegram.Client, qrlogin.LoggedIn
 	return client, accepted, err
 }
 
-// NewTelegram uses an existing authenticated session. Login never runs in HTTP.
+// NewTelegram uses an existing authenticated session; onboarding is separate.
 func NewTelegram(ctx context.Context, cfg TelegramConfig) (*TelegramStore, error) {
 	if _, _, err := telegramChannelSelector(cfg, false); err != nil {
 		return nil, err
@@ -273,8 +273,10 @@ func (s *TelegramStore) Close() error {
 	return s.runErr
 }
 
-func (s *TelegramStore) operationContext(ctx context.Context) (context.Context, func(), func()) {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+func (s *TelegramStore) operationContext(ctx context.Context, transferBytes int64) (context.Context, func(), func()) {
+	// Allow 100 MiB chunks on slower links without unbounded retries/waits.
+	timeout := min(10*time.Minute, 2*time.Minute+time.Duration(transferBytes/(256<<10))*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	stop := context.AfterFunc(s.ctx, cancel)
 	retried := false
 	onRetry := func() {
@@ -300,10 +302,10 @@ func (s *TelegramStore) operationContext(ctx context.Context) (context.Context, 
 }
 
 func (s *TelegramStore) Put(ctx context.Context, key string, ciphertext []byte) (string, error) {
-	if !isHexID(key) || len(ciphertext) == 0 || len(ciphertext) > (64<<20)+64 {
+	if !isHexID(key) || len(ciphertext) == 0 || int64(len(ciphertext)) > maxCiphertextSize {
 		return "", domain.ErrInvalid
 	}
-	ctx, cancel, onRetry := s.operationContext(ctx)
+	ctx, cancel, onRetry := s.operationContext(ctx, int64(len(ciphertext)))
 	defer cancel()
 	var random [8]byte
 	if _, err := rand.Read(random[:]); err != nil {
@@ -406,7 +408,7 @@ func (s *TelegramStore) Get(ctx context.Context, ref string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel, onRetry := s.operationContext(ctx)
+	ctx, cancel, onRetry := s.operationContext(ctx, maxCiphertextSize)
 	defer cancel()
 	return retryTelegram(ctx, func() ([]byte, error) {
 		// Resolve the message on every attempt to refresh expiring file_reference.
@@ -436,7 +438,7 @@ func (s *TelegramStore) Get(ctx context.Context, ref string) ([]byte, error) {
 }
 
 func downloadTelegramDocument(ctx context.Context, document *tg.Document, api *tg.Client, currentDC int, mediaOnly func(context.Context, int, int64) (telegram.CloseInvoker, error), onRetry func()) ([]byte, error) {
-	if document.Size <= 0 || document.Size > (64<<20)+64 {
+	if document.Size <= 0 || document.Size > maxCiphertextSize {
 		return nil, domain.ErrIntegrity
 	}
 	primary := api.Invoker()
@@ -499,7 +501,7 @@ func (s *TelegramStore) Delete(ctx context.Context, ref string) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel, onRetry := s.operationContext(ctx)
+	ctx, cancel, onRetry := s.operationContext(ctx, 0)
 	defer cancel()
 	_, err = retryTelegram(ctx, func() (*tg.MessagesAffectedMessages, error) {
 		return s.client.API().ChannelsDeleteMessages(ctx, &tg.ChannelsDeleteMessagesRequest{Channel: s.channel, ID: []int{id}})

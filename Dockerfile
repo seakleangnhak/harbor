@@ -33,7 +33,7 @@ COPY --from=server /drive /app/drive
 COPY --from=server /harbor-recovery /app/harbor-recovery
 COPY --from=web /src/web/dist /app/web/dist
 COPY --from=server --chown=65532:65532 /runtime/ /
-ENV DRIVE_ADDR=0.0.0.0:8080 DRIVE_DATA_DIR=/data DRIVE_STATIC_DIR=/app/web/dist DRIVE_ENV_FILE=-
+ENV DRIVE_ADDR=0.0.0.0:8080 DRIVE_DATA_DIR=/data DRIVE_STATIC_DIR=/app/web/dist DRIVE_ENV_FILE=- GOMEMLIMIT=512MiB
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=3 CMD ["/app/drive", "health"]
 ENTRYPOINT ["/app/drive"]

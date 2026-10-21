@@ -3,7 +3,10 @@
 async (page) => {
   const origin = new URL(page.url()).origin
   const diagnostics = await page.request.get(`${origin}/api/v1/diagnostics`)
-  if (!diagnostics.ok() || (await diagnostics.json()).adapter !== 'local') throw new Error('Disposable local adapter required')
+  if (!diagnostics.ok()) throw new Error('Disposable local adapter required')
+  const configuration = await diagnostics.json(), chunkSize = configuration.chunk_size
+  if (configuration.adapter !== 'local') throw new Error('Disposable local adapter required')
+  if (!Number.isSafeInteger(chunkSize) || chunkSize < 1 || chunkSize > 100 * 1024 * 1024) throw new Error('Supported server chunk size required')
   const assert = (condition, message) => { if (!condition) throw new Error(message) }, passed = []
   await page.setViewportSize({ width: 1440, height: 900 }); await page.reload()
   const name = `Recovery ${Date.now()}.bin`, copy = name.replace('.bin', ' copy.bin'), requests = []
@@ -16,7 +19,13 @@ async (page) => {
   }
   await page.route(chunkPattern, chunkHandler)
   try {
-    await page.getByLabel('Choose files to upload', { exact: true }).setInputFiles([{ name, mimeType: 'application/octet-stream', buffer: Buffer.alloc(8 * 1024 * 1024 + 17, 43) }])
+    // Generate in-browser to keep large fixture bytes out of automation IPC.
+    await page.getByLabel('Choose files to upload', { exact: true }).evaluate((input, { name, size }) => {
+      const files = new DataTransfer()
+      files.items.add(new File([new Uint8Array(size).fill(43)], name, { type: 'application/octet-stream' }))
+      input.files = files.files
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    }, { name, size: chunkSize + 17 })
     await page.getByRole('button', { name: `Retry ${name}`, exact: true }).waitFor({ timeout: 30000 })
     assert(requests.filter(index => index === 1).length === 3, 'Retry count not bounded at three attempts')
     const before = await page.request.get(`${origin}/api/v1/nodes?q=${encodeURIComponent(name)}`)
@@ -36,7 +45,7 @@ async (page) => {
   const sourcePattern = `**/api/v1/nodes/${source.id}/content`
   let release, blocked = false
   const sourceHandler = async route => {
-    if (route.request().headers()['range']?.startsWith('bytes=4194304-')) {
+    if (route.request().headers()['range']?.startsWith(`bytes=${chunkSize}-`)) {
       blocked = true
       await new Promise(resolve => { release = resolve })
     }
@@ -47,7 +56,7 @@ async (page) => {
     await page.getByRole('button', { name: `Actions for ${name}`, exact: true }).click()
     await page.getByRole('menuitem', { name: 'Copy', exact: true }).click()
     await page.getByRole('button', { name: 'Paste here', exact: true }).click()
-    await page.waitForFunction(copy => JSON.parse(localStorage.getItem('harbor:transfers:v1') || '[]').some(item => item.name === copy && item.received_bytes === 4194304), copy)
+    await page.waitForFunction(({ copy, chunkSize }) => JSON.parse(localStorage.getItem('harbor:transfers:v1') || '[]').some(item => item.name === copy && item.received_bytes === chunkSize), { copy, chunkSize }, { timeout: 60000 })
     assert(blocked, 'Second source range not intercepted')
     await page.getByRole('button', { name: `Pause ${copy}`, exact: true }).click()
     release?.()
@@ -80,5 +89,5 @@ async (page) => {
     assert((await cancelled.json()).total === 0, 'Cancelled copy published')
     passed.push('concurrent cancellation cleans pending session and never publishes incomplete copy')
   } finally { await page.unroute(sourcePattern, failSource) }
-  return { result: 'PASS', passed, source: name, bytes: source.size, sha256: source.sha256, failed_chunk_attempts: 3 }
+  return { result: 'PASS', passed, source: name, bytes: source.size, chunk_size: chunkSize, sha256: source.sha256, failed_chunk_attempts: 3 }
 }

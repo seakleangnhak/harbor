@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { clampImagePan, codeTokens, readPreviewText, textPreviewLimit } from './components/preview-utils.ts'
-import { checkTransferCapacity, readCopyRange, restoreTransfers, storedTransfers, transferDelay, transferSummary, type Transfer } from './transfer-utils.ts'
+import { checkTransferCapacity, maxUploadChunkSize, readCopyRange, restoreTransfers, storedTransfers, transferDelay, transferSummary, type Transfer } from './transfer-utils.ts'
 
 const digest = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
 const source = { id: 'source', name: 'source.txt', size: 3, mime_type: 'text/plain', sha256: digest }
@@ -29,6 +29,14 @@ test('copy cancellation closes its source stream and creates no destination blob
   const delayed = new AbortController(), waiting = transferDelay(10_000, delayed.signal)
   delayed.abort()
   await assert.rejects(waiting, /aborted/i)
+})
+
+test('copy bounds accept existing chunks and 100 MiB chunks, rejecting oversized ranges before allocation', async () => {
+  const largeSource = { size: maxUploadChunkSize + 1, sha256: digest }
+  for (const size of [4 * 1024 * 1024, 100 * 1024 * 1024]) {
+    await assert.rejects(readCopyRange(new Response(null, { status: 200 }), largeSource, 0, size - 1), /verified ranges/)
+  }
+  await assert.rejects(readCopyRange(new Response(null, { status: 200 }), largeSource, 0, maxUploadChunkSize), /range is invalid/)
 })
 
 test('durable transfer history restores copies and downloads paused without requesting original files', () => {
