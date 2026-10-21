@@ -38,6 +38,8 @@ Harbor keeps your file organization and encryption keys on a host you control. T
 
 Built for one owner. No public signup, sharing links, or extra infrastructure to operate. **v1.0.0 passed local personal-use qualification**, including live Telegram, multipart integrity, container recreation, and encrypted restoration into a fresh environment. This is not an independent security audit or public-internet deployment qualification. [Evidence and scope](docs/PHASE6_FINAL_REPORT.md).
 
+**Current source adds browser onboarding and 100 MiB chunks.** Build this checkout to use them. Published image **1.0.1 does not contain these changes**; its qualification reports describe that earlier release.
+
 ## What Harbor does
 
 | A clear file manager | Storage you can inspect and recover |
@@ -45,7 +47,7 @@ Built for one owner. No public signup, sharing links, or extra infrastructure to
 | Nested folders, breadcrumbs, search, sorting, favorites and recent files | Telegram MTProto storage through your dedicated account and owned private channel |
 | Dense list and thumbnail grid, multi-selection, context menus and clipboard actions | AES-256-GCM chunks with SHA-256 verification before completed files appear |
 | Image, PDF, text/code, audio and browser-supported video previews | Resumable multipart uploads with durable server acknowledgements |
-| Responsive layouts, light/dark themes, keyboard shortcuts and command palette | Transfer history, retries, cancellation and supported pause/resume |
+| Responsive layouts, light/dark themes, keyboard shortcuts and command palette | Guarded browser setup for owner password and Telegram QR authorization |
 | Trash and recovery, details inspector, persistent folder preferences | Encrypted offline recovery archives and restart-safe folder-copy jobs |
 
 <details>
@@ -66,27 +68,29 @@ Built for one owner. No public signup, sharing links, or extra infrastructure to
 
 ## Get started
 
-Use a fresh checkout and a trusted local machine. The default adapter is **local**; no Telegram account is needed to try Harbor. Do not replace an existing `.env`, data directory, content key or session.
+Use a fresh checkout and a trusted local machine. Start Harbor, then create your owner password and choose Telegram or local storage in the browser. Local storage needs no Telegram account. Do not replace an existing `.env`, data directory, content key or session.
 
 ### Docker Compose
 
 Requires Docker with Compose v2 and Buildx. Cold Telegram compilation needs several GiB of RAM; build one architecture at a time on constrained machines. Compose limits the running service to 2 CPUs and 768 MiB. Run from the repository root:
 
 ```sh
-test -e .env || cp .env.example .env
-chmod 600 .env
-docker compose -p harbor-local build
-docker compose -p harbor-local run --rm drive init
-docker compose -p harbor-local run --rm drive password
-docker compose -p harbor-local up -d
+export DRIVE_SETUP_TOKEN="$(openssl rand -hex 32)"
+docker compose -p harbor-local up -d --build
+printf 'Setup token: %s\n' "$DRIVE_SETUP_TOKEN"
 docker compose -p harbor-local ps
 ```
 
-Open **[http://127.0.0.1:8080](http://127.0.0.1:8080)** and sign in with the password displayed in your local Terminal. There is no default password. `password` requires an interactive terminal; initialization generates private key/password files and never replaces existing ones.
+Open **[http://127.0.0.1:8080](http://127.0.0.1:8080)**. Paste the setup token, choose your own owner password, and follow the storage setup. Telegram uses an in-browser QR and optional two-step password. No `init`, `password`, or terminal Telegram command is needed for a new installation. Keep the token private; it prevents another visitor from claiming setup.
 
-Compose publishes only on loopback. Its non-root, read-only container keeps SQLite, encryption key, password and session in the persistent `harbor-local_drive-data` volume. Keep the same Compose project name for later restarts. **Do not use `docker compose down -v` on a drive you want to keep.** Use `DRIVE_PORT` in `.env` to change the host port.
+Compose builds `harbor:local`, publishes only on loopback, and uses a non-root, read-only container. SQLite, encryption key, owner credentials and Telegram session remain in the persistent `harbor-local_drive-data` volume. Keep the same Compose project name for later restarts. **Do not use `docker compose down -v` on a drive you want to keep.** Use `DRIVE_PORT` in your environment to change the host port. Existing initialized volumes keep their original login and storage.
 
-This quickstart builds from source. A [private GHCR package](https://github.com/users/seakleangnhak/packages/container/package/harbor) is also available for AMD64 and ARM64. With an already authorized GHCR client, pull the qualified immutable image:
+For plain `docker run`, HTTPS/Dokploy configuration, persistent state and troubleshooting, use the [web onboarding guide](docs/WEB_ONBOARDING.md).
+
+<details>
+<summary>Earlier published image and existing Dokploy installations</summary>
+
+The [private GHCR package](https://github.com/users/seakleangnhak/packages/container/package/harbor) version **1.0.1** is available for AMD64 and ARM64, with its original terminal setup and 4 MiB default chunks. It does not support the new onboarding described above. With an already authorized GHCR client:
 
 ```sh
 docker pull ghcr.io/seakleangnhak/harbor@sha256:d5c56ecd655e83f298e63f3e97f7df7582aecd9ebdd45b0d6aed6801b36bc855
@@ -94,7 +98,9 @@ docker pull ghcr.io/seakleangnhak/harbor@sha256:d5c56ecd655e83f298e63f3e97f7df75
 
 Version tag `1.0.1`, minor `1.0` and `latest` resolve to this index at release qualification; prefer the digest for deployment. Keep existing volume identity and recovery material when using a trusted-image override. [Operations](docs/PRODUCTION_OPERATIONS.md) · [Publishing and image verification](docs/GHCR_PUBLISHING_GUIDE.md).
 
-For Dokploy, use the image-only [Compose template](compose.dokploy.yaml) and [deployment guide](docs/DOKPLOY.md). It keeps one instance, an external data volume and HTTPS routing configured through Dokploy.
+The pinned [Dokploy Compose template](compose.dokploy.yaml) and [deployment guide](docs/DOKPLOY.md) still describe that release. Preserve an existing deployment's volume and configuration. A new published image requires a separately approved release; building this checkout does not update GHCR.
+
+</details>
 
 ### Local development
 
@@ -102,39 +108,38 @@ Requires Go **1.26.10+**, Node.js **24+**, and npm. macOS and Linux are supporte
 
 ```sh
 (cd web && npm ci && npm run build)
-go run ./cmd/drive init
-go run ./cmd/drive password
-go run ./cmd/drive
+export DRIVE_ENV_FILE=-
+export DRIVE_DATA_DIR=./data-web
+export DRIVE_SETUP_TOKEN="$(openssl rand -hex 32)"
+printf 'Setup token: %s\n' "$DRIVE_SETUP_TOKEN"
+go run -tags telegram ./cmd/drive
 ```
 
-The same local address serves the API and production frontend. For frontend development, run `npm run dev` in `web` alongside Go; Vite proxies API requests to port 8080. Default Go builds use the local adapter. Telegram commands need `-tags telegram`.
+The same local address serves the API, onboarding and production frontend. `data-web` keeps this example separate from existing `data`; `DRIVE_ENV_FILE=-` avoids loading unrelated `.env` settings. For frontend development, run `npm run dev` in `web` alongside Go; Vite proxies API requests to port 8080. Default Go builds support local storage only. Use `-tags telegram` for browser Telegram setup.
 
 ## Connect Telegram
 
-Use a **dedicated Telegram account** and an **owned private channel** with auto-delete disabled and no linked discussion. Obtain your own API credentials from [my.telegram.org/apps](https://my.telegram.org/apps). Keep credentials, private channel links, QR codes and session files out of screenshots, issue reports and browser configuration.
+Use a **dedicated Telegram account** and an **owned private channel** with auto-delete disabled and no linked discussion. Obtain your own API credentials from [my.telegram.org/apps](https://my.telegram.org/apps).
 
-1. Edit private `.env`: set `TELEGRAM_APP_ID`, `TELEGRAM_APP_HASH`, `USERNAME_OR_CHANNEL_LINK`, and `DRIVE_STORAGE=telegram`. Set `TELEGRAM_CHANNEL_ID` too when known; it guards against resolving the wrong channel.
-2. Use a new drive/project. A drive is permanently bound to its original adapter, key and channel. Stop the local demo or choose another `DRIVE_PORT` first.
-3. Initialize and authorize from an interactive local Terminal:
+1. Start a fresh installation using the Compose quickstart, then enter its private setup token and create your owner password.
+2. Choose **Telegram**. Enter the API ID, API hash, and current private channel invite or message link. An expected channel ID is optional.
+3. In your dedicated Telegram account, open **Settings → Devices → Link Desktop Device**, scan the browser QR, and approve. Enter any Telegram two-step password in the protected setup form.
+4. Wait for **Private channel verified**, review setup, then open Harbor and sign in using your chosen owner password.
 
-   ```sh
-   docker compose -p harbor-telegram build
-   docker compose -p harbor-telegram run --rm drive init
-   docker compose -p harbor-telegram run --rm drive telegram-setup-qr
-   docker compose -p harbor-telegram run --rm drive password
-   docker compose -p harbor-telegram up -d
-   ```
-
-4. In the dedicated account, open **Settings → Devices → Link Desktop Device**, scan the Terminal QR, and approve. Enter any two-step password only in Terminal. Setup verifies channel ownership and retention before storage starts.
+Use HTTPS for any remote browser connection; loopback HTTP is supported locally. Tokens and entered credentials stay in browser memory during setup, never URLs or browser storage. Saved API credentials/session stay on the server. Keep private links, QR codes and secrets out of screenshots and issue reports. A drive is permanently bound to its adapter, key and channel; onboarding cannot reset an existing drive.
 
 With a private channel link, Harbor resolves the access hash internally. Leave `TELEGRAM_CHANNEL_ACCESS_HASH` absent/empty. Invite links and copied private-message links are supported; the account must already own the channel. Setup does not join through an invite. Public `@username` channels are rejected. Positive MTProto IDs and valid Bot API channel IDs are accepted as the optional expected ID.
 
 <details>
-<summary>Native setup, phone login and channel discovery</summary>
+<summary>Legacy terminal setup, phone login and channel discovery</summary>
 
 Use an independent data directory for a native Telegram drive:
 
+Set the API ID/hash and private channel selector in a mode-`0600` `.env` first. This explicit legacy path does not use the browser bootstrap token:
+
 ```sh
+unset DRIVE_SETUP_TOKEN
+export DRIVE_ENV_FILE=.env
 export DRIVE_DATA_DIR=./data-telegram
 export DRIVE_STORAGE=telegram
 go run -tags telegram ./cmd/drive init
@@ -153,23 +158,24 @@ Stop the server before setup/discovery; the CLI takes its exclusive data lock. C
 
 ## Configuration
 
-Start with [`.env.example`](.env.example). Go loads a private regular `.env` from its working directory; mode `0600` is required. Values are literal, without shell execution or variable interpolation. Process environment takes priority. Compose substitutes `.env` values and explicitly forwards runtime Telegram settings. Never use `VITE_` for secrets or pass runtime credentials as Docker build arguments.
+Fresh browser setup needs only `DRIVE_SETUP_TOKEN`; leave storage/password/Telegram overrides unset so the browser can select them. Optional values are documented in [`.env.example`](.env.example). Go loads a private regular `.env` from its working directory; mode `0600` is required. Values are literal, without shell execution or variable interpolation. Process environment takes priority; the saved web bundle fills unset values. Conflicting storage/password/Telegram overrides reject setup. Never use `VITE_` for secrets or pass runtime credentials as Docker build arguments.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `DRIVE_STORAGE` | `local` | Adapter: `local` or `telegram`; bound on first server start |
+| `DRIVE_SETUP_TOKEN` | unset | Random 32–256-character first-run secret; setup refuses an unprotected fresh installation |
+| `DRIVE_STORAGE` | unset for setup | Browser chooses `local` or `telegram`; initialized legacy configuration remains supported |
 | `DRIVE_ADDR` | `127.0.0.1:8080` | Native HTTP listener |
 | `DRIVE_PORT` | `8080` | Compose host port; native binary uses `DRIVE_ADDR` |
 | `DRIVE_DATA_DIR` | `data` | Native private state directory; Compose uses its `/data` volume |
 | `DRIVE_KEY_FILE` | `<data>/content.key` | Original 32-byte content key; never replace for an existing drive |
-| `DRIVE_OWNER_PASSWORD_FILE` | `<data>/owner-password` | Generated first-owner password; later changes do not reset the owner |
+| `DRIVE_OWNER_PASSWORD_FILE` | `<data>/owner-password` for legacy | Web setup uses `<data>/setup/owner-password`; changing files later does not reset the owner |
 | `DRIVE_STATIC_DIR` | `web/dist` | Production frontend; supplied by the Docker image |
 | `DRIVE_ENV_FILE` | `.env` | Override configuration file; `-` disables implicit loading |
 | `DRIVE_SECURE_COOKIES` | `false` | Enable with deliberately configured HTTPS |
 | `TELEGRAM_APP_ID`, `TELEGRAM_APP_HASH` | unset | Dedicated account's server-side API application credentials |
 | `USERNAME_OR_CHANNEL_LINK` | unset | Owned private channel selector; no manual access hash required |
 | `TELEGRAM_CHANNEL_ID` | unset | Optional expected ID with a link; required in numeric-only mode |
-| `TELEGRAM_SESSION_FILE` | `<data>/telegram.session` | Native MTProto authorization file, mode `0600` |
+| `TELEGRAM_SESSION_FILE` | `<data>/telegram.session` for legacy | Web setup uses `<data>/setup/telegram.session`, mode `0600` |
 
 Keep state directories mode `0700`, secret files mode `0600`. Missing key, database or storage binding on an existing drive fails closed. Restore the original material; do not initialize over damaged state. [Operations](docs/PRODUCTION_OPERATIONS.md) covers additional settings, protected volumes, health/readiness, shutdown and HTTPS reverse proxies.
 
@@ -185,7 +191,7 @@ flowchart LR
     MTProto --> Channel["Owned private channel<br/>Encrypted chunk documents"]
 ```
 
-Files become independent **4 MiB** AES-256-GCM chunks with fresh nonces and authenticated chunk identities. SQLite stores ordered chunk references and SHA-256 digests. Finalization reads and verifies the complete file before publishing its metadata. Downloads verify chunks before releasing plaintext and support HTTP byte ranges for PDF/video seeking. Metadata changes do not rewrite file content.
+New uploads use independent **100 MiB** AES-256-GCM chunks with fresh nonces and authenticated chunk identities. Existing 4 MiB files and resumable uploads keep their recorded geometry. This is a chunk size, not a total-file cap; the existing API ceiling remains 1 TiB. SQLite stores ordered chunk references and SHA-256 digests. Finalization verifies the complete file before publishing its metadata. Downloads authenticate whole chunks before releasing plaintext, then support HTTP byte ranges for PDF/video seeking. Larger chunks can increase first-preview latency. Metadata changes do not rewrite file content.
 
 One modular monolith serves UI/API and durable copy jobs. No Redis, external worker or object-storage service is required. Stack: Go/Chi, SQLite WAL, gotd/td, React, TypeScript, Vite, Tailwind CSS, Radix/shadcn primitives and TanStack Query/Virtual. [Architecture](docs/ARCHITECTURE.md) · [API contract](docs/API_CONTRACT.md).
 
@@ -198,11 +204,11 @@ go build -o bin/harbor-recovery ./cmd/harbor-recovery
 mkdir -m 700 backups
 # Harbor must be stopped. Use a new archive path.
 bin/harbor-recovery backup --data-dir ./data \
-  --output backups/harbor-recovery.harbor --config-file .env
+  --output backups/harbor-recovery.harbor
 bin/harbor-recovery verify --archive backups/harbor-recovery.harbor
 ```
 
-Enter a high-entropy backup password in the hidden Terminal prompt. Automation uses a separate private `--password-file`, never a password argument or environment variable. The config file must describe the actual adapter/channel, including any runtime overrides. Docker backup requires access to the stopped project's private volume; follow the runbook rather than using the native `./data` example.
+Enter a high-entropy backup password in the hidden Terminal prompt. Automation uses a separate private `--password-file`, never a password argument or environment variable. For browser-onboarded drives, omit `--config-file`: recovery detects the private `<data>/setup` bundle and its owner/session files. Legacy configuration requires an explicit config file describing the actual runtime adapter/channel. Docker backup requires access to the stopped project's private volume; follow the runbook rather than using the native `./data` example.
 
 **A Telegram recovery archive does not mirror remote ciphertext.** Lost account/channel/messages require an independent protected content copy. Key loss without a usable archive, or loss of the archive password, has no recovery bypass.
 
@@ -249,10 +255,10 @@ For reproducible local packaging, `scripts/release.py` builds an explicit truste
 
 | Symptom | Next step |
 | --- | --- |
-| First login/password unclear | Run `drive password` or the matching Compose `run --rm drive password` in a local interactive Terminal. No default credentials exist. |
+| First login/password unclear | Fresh source builds use the browser setup token, then your chosen owner password. Legacy initialized deployments can use `drive password` in an interactive Terminal. No default credentials exist. |
 | HTTP 429 on login | Wait for the throttle window; repeated automated sign-ins count too. Do not disable protection. |
 | `channel_mismatch` or `channel_retention` | Check link/expected ID and disable channel auto-delete. Keep target verification enabled. |
-| Telegram code never arrives | Follow reported delivery method on an already signed-in dedicated account; use `telegram-setup-qr` instead of repeatedly requesting codes. |
+| Telegram authorization stalls | Restart the browser QR attempt when expired. For legacy phone login, follow the reported delivery method or use `telegram-setup-qr`; avoid repeated code requests. |
 | Upload waiting after bytes reach 100% | Finalization verifies every stored chunk before publishing. Keep the transfer active. |
 | State/key permissions or missing binding error | Restore original private permissions/material. Never replace `content.key`, delete SQLite/WAL, or switch adapters to bypass startup. |
 | Container recreation loses visible files | Check the original Compose project/volume identity. Stop before further changes and follow recovery guidance; never delete the volume. |

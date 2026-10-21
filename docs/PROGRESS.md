@@ -1,5 +1,15 @@
 # Progress
 
+## Browser onboarding and 100 MiB chunks — local qualification PASS
+
+Fresh source installations now start from Compose/container runtime environment and a random `DRIVE_SETUP_TOKEN`, then create their owner password and choose local/Telegram storage in the web UI. Telegram uses guarded QR/optional two-step input, private-channel verification and an atomically activated private configuration/session bundle. Existing initialized data, legacy CLI/environment setup, keys, sessions and 4 MiB manifests remain supported. Current source features are not present in published image 1.0.1; its pinned Dokploy template remains on the legacy flow. No new image release, push or remote deployment is implied.
+
+Coordinator owns startup/config persistence, deployment, recovery integration and final acceptance. Backend agent completed first-run authorization/state handlers and synthetic security tests. Storage agent completed the 100 MiB default, compatible bounds, in-place buffers and shared reader/upload/finalization limits. Frontend agent completed owner/storage/review onboarding, QR/two-step states, readiness handoff, 100 MiB client validation and user-facing documentation.
+
+**PASS:** default/Telegram-tagged Go tests, race and vet; 29 frontend tests, typecheck/build; 44 Python tests; actual process onboarding, 100 MiB resume/restart/Range/checksum and encrypted fresh restore. Chromium setup/local transfer plus 100 MiB bounded retry, pause/reload/resume and cancellation pass. Seven scoped axe checks have zero violations; desktop/mobile light/dark screenshots reviewed. Non-root artifact runtime passes health, multipart checksums, restart and volume-preserving recreation. Source Compose validates.
+
+**PARTIAL:** complete production Dockerfile build was blocked by unavailable offline npm dependencies; separately built final binaries/web assets and a matching distroless runtime were tested. **NOT TESTED:** new live Telegram web authorization/100 MiB live Telegram, live cross-DC, new published image and remote Dokploy. Current source is committed locally only; existing deployment and release remain unchanged. [Qualification report](WEB_ONBOARDING_REPORT.md) · [Setup guide](WEB_ONBOARDING.md) · [API contract](API_CONTRACT.md).
+
 ## Private v1.0.1 release — artifact qualification PASS
 
 Owner-authorized sanitized source/tag, [GitHub Release v1.0.1](https://github.com/seakleangnhak/harbor/releases/tag/v1.0.1) and private GHCR publication completed. Full tagged Go/default/Telegram/race/vet/reproducibility, frontend and both Docker jobs passed. Actual package index `sha256:d5c56ecd655e83f298e63f3e97f7df7582aecd9ebdd45b0d6aed6801b36bc855` passed local and hosted immutable-image checks, both architecture encrypted multipart/checksum/restart/recreation smokes, labels/SBOM/provenance and scoped image-content scans. [Exact receipt](GHCR_RELEASE_REPORT.md).

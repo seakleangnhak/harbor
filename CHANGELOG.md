@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Guarded first-run browser onboarding: choose an owner password, configure local/Telegram storage, approve Telegram QR/two-step authorization and persist private setup across restarts. Source Compose/container startup no longer needs terminal initialization for fresh drives.
+- New encrypted chunks use 100 MiB with bounded shared buffers and compatible 4 MiB manifests; recovery and frontend transfer bounds follow persisted geometry. Larger chunks can increase preview latency.
+- Local process/browser, restart/resume and encrypted-restore qualification passed. New live Telegram web authentication and exact release-image qualification remain pending; published 1.0.1 is unchanged.
 - Correct workflow-token package validation when GHCR omits repository metadata: private visibility plus owner-verified immutable package-ID continuity, with explicit owner linkage checks.
 - Read-only verification of an existing annotated release/index, platform attestations and pulled-image smoke without rebuilding or changing version tags. These fixes are on main after immutable v1.0.1.
 
