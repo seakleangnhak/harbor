@@ -345,11 +345,8 @@ func (e *Engine) storePending(ctx context.Context, id string, index int) error {
 	}
 	cleanup, stop := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer stop()
-	unlock, err = e.lock(cleanup, id)
-	if err != nil {
-		return err
-	}
-	defer unlock()
+	// Queued parts are immutable and workLock excludes finalization/cancellation.
+	// Commit the acknowledged chunk without waiting for the next browser body.
 	tx, err := e.db.BeginTx(cleanup, nil)
 	if err != nil {
 		_ = e.backend.Delete(cleanup, ref)
@@ -375,11 +372,6 @@ func (e *Engine) storePending(ctx context.Context, id string, index int) error {
 func (e *Engine) pendingFailure(ctx context.Context, id string, index int, cause error) error {
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	unlock, err := e.lock(cleanup, id)
-	if err != nil {
-		return err
-	}
-	defer unlock()
 	state, code := "failed", "storage_unavailable"
 	if errors.Is(cause, domain.ErrIntegrity) || errors.Is(cause, domain.ErrInvalid) {
 		code = "integrity_failed"
@@ -387,7 +379,7 @@ func (e *Engine) pendingFailure(ctx context.Context, id string, index int, cause
 	if ctx.Err() != nil {
 		state, code = "queued", ""
 	}
-	_, err = e.db.ExecContext(cleanup, `UPDATE storage_pending_chunks SET state=?,error_code=? WHERE upload_id=? AND idx=? AND state='storing'`, state, code, id, index)
+	_, err := e.db.ExecContext(cleanup, `UPDATE storage_pending_chunks SET state=?,error_code=? WHERE upload_id=? AND idx=? AND state='storing'`, state, code, id, index)
 	return err
 }
 
