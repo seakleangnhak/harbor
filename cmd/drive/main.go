@@ -41,6 +41,11 @@ func run() error {
 		command = os.Args[1]
 	}
 	dataDir := env("DRIVE_DATA_DIR", "data")
+	if command == "storage-diagnostics" || command == "storage-cleanup" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return runStorageHygiene(ctx, dataDir, command, os.Args[2:], os.Stdout)
+	}
 	if command == "health" {
 		client := http.Client{Timeout: 3 * time.Second}
 		resp, err := client.Get(env("DRIVE_HEALTH_URL", "http://127.0.0.1:8080/health"))
@@ -74,7 +79,7 @@ func run() error {
 	defer stop()
 	telegramCommand := command == "telegram-setup" || command == "telegram-channels" || command == "telegram-setup-qr"
 	if command != "serve" && command != "integrity" && command != "integrity-content" && !telegramCommand {
-		return errors.New("usage: drive [init|serve|health|integrity|integrity-content|password|telegram-setup|telegram-setup-qr|telegram-channels]")
+		return errors.New("usage: drive [init|serve|health|integrity|integrity-content|storage-diagnostics|storage-cleanup|password|telegram-setup|telegram-setup-qr|telegram-channels]")
 	}
 	lock, err := os.OpenFile(filepath.Join(dataDir, ".lock"), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
