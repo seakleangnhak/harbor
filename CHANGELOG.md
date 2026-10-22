@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.3.0-rc.1 — 2026-10-22 (local candidate, unpublished)
+## 1.3.0 — 2026-10-22 (prepared locally, unpublished)
 
 - Durable bounded background saving and next-file handoff; distinguish browser acceptance, remote storage and verified publication. Keep existing 100 MiB storage chunks and 4 MiB client parts.
 - Ciphertext-only authenticated read cache and cold-miss/worker-lock fixes, qualified separately in Milestone A.
@@ -8,6 +8,9 @@
 - Reuse one private staging-part buffer during assembly, preserving nonce, authenticated identity and hash checks.
 - Offline storage diagnostics and explicitly confirmed, audited cleanup of disposable cache and verified published staging leftovers. No remote garbage collection or deletion of recoverable jobs.
 - Expanded sustained mixed-load, real PDF/video, large-directory, preview-crash and full-staging-disk regression fixtures. Qualification and candidate decision: [Milestone B](docs/MILESTONE_B_FINAL_REPORT.md).
+- Fix PDF fetch-reader cancellation rejections, including cancellation before response headers; retain consumer rejection and pin/guard the narrowly scoped dependency patch.
+- Keep mobile navigation and its scrim above the transfer panel, with both-engine pointer/focus/theme/accessibility regressions.
+- Add extended transfer/resource soaks, live upgrade/recovery and fresh-volume rollback qualification. Final stable readiness remains separate in the [Milestone C gate](docs/V1.3_RELEASE_FINAL_GATE.md).
 
 ## 1.2.1 — 2026-10-22
 

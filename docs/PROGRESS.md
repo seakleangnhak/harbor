@@ -9,11 +9,15 @@ suites/139 axe checks, RC live Telegram, encrypted recovery and isolated
 v1.2.1 upgrade/rollback pass within their recorded scope. Mobile navigation
 stacking and two reproduced PDF cancellation rejection paths are fixed.
 
-Overall release remains PARTIAL: final-patch 30-minute browser media, final
-source/image identity and archive-only live restore proof remain pending.
-Docker Desktop stopped during host-disk exhaustion; incomplete media evidence
-is retained, and qualification is moving to the dedicated isolated VM.
-No version promotion, tag, push, publication or deployment upgrade occurred.
+Fresh final-patch browser media now passes 1800.006 seconds/30 cycles, one
+restart, 480 MiB upload/download SHA, zero browser errors/OOM and clean late
+metadata. Earlier host-full/Desktop interruptions remain documented; original
+Harbor is healthy after authorized recovery and owner cleanup recovered about
+29 GiB. Source defaults are locally prepared as 1.3.0; published v1.2.1 and
+Compose pull default remain unchanged.
+Overall release remains PARTIAL until exact stable images, final live archive-only
+restore and final source checks pass. No tag, push, publication or deployment
+upgrade occurred.
 See [final gate](V1.3_RELEASE_FINAL_GATE.md) and its four qualification reports.
 
 ## Milestone B — PASS, local 1.3.0-rc.1 only

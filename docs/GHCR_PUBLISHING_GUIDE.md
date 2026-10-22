@@ -78,7 +78,7 @@ python3 scripts/release.py --ref v1.1.0 --version 1.1.0 \
 (cd output/releases/v1.1.0-arm64 && shasum -a 256 -c SHA256SUMS)
 ```
 
-Repeat with `linux/amd64` and separate output/image names. `--version` injects diagnostics and OCI version metadata; the current source default is 1.2.1. CI compares two Go binary outputs using a shared compilation cache; this checks output equality, not independent cold compilation. Multiarch index/attestation bytes and registry tags are different artifacts from the historical single-platform v1.0.0 image.
+Repeat with `linux/amd64` and separate output/image names. `--version` injects diagnostics and OCI version metadata; the current local prepared-source default is 1.3.0; published v1.2.1 remains unchanged. CI compares two Go binary outputs using a shared compilation cache; this checks output equality, not independent cold compilation. Multiarch index/attestation bytes and registry tags are different artifacts from the historical single-platform v1.0.0 image.
 
 ## Older release, without changing history
 

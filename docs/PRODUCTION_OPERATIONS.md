@@ -41,6 +41,23 @@ Scope: single-owner personal use on a trusted local host. This runbook does not 
 
 ## Protected installation
 
+Compose keeps a 768 MiB hard limit and a 512 MiB Go soft limit. Two generated
+30-minute mixed runs at 768 MiB/1 GiB completed without OOM; both reached their
+cgroup ceilings through file cache. The 1 GiB run observed fewer reclaim stalls,
+without demonstrating spare capacity or a general speed gain. Keep existing
+worker/concurrency limits. Monitor RSS/live heap separately from cgroup anonymous
+memory, file cache, memory events and PSI; see [resource measurements](V1.3_RESOURCE_REPORT.md).
+An explicitly configured 1 GiB hard limit with the same Go limit is a tested
+optional operating point, not a changed default or guaranteed minimum.
+
+Persistent storage has no application-wide quota. Budget for roughly 400 MiB
+of fresh pending chunks, up to 256 MiB cache reservations, SQLite/WAL, backups
+and older recoverable/unknown leftovers. These are components, not a total disk
+bound. Monitor free space inside the volume and on the VM's backing host; a
+host-full event can stop Docker even when the container volume reports space.
+Use offline diagnostics before any confirmed cleanup; never remove unknown data
+or run a broad Docker volume prune on an installation you want to retain.
+
 Keep the data directory, backup directory, recovery parent, and secret-file parents private (0700); sensitive files must be regular files with mode 0600. Do not use symlinks for keys, sessions, passwords, or SQLite files. Preserve `drive.db` together with its WAL state, `storage.json`, the original content key, and Telegram authorization. Startup rejects missing metadata on an already bound drive; `init` is not a repair operation.
 
 Build trusted binaries with Go 1.26.10 or newer compatible Go:
@@ -184,13 +201,14 @@ Compose targets `ghcr.io/seakleangnhak/harbor:1.2.1` by default. Use `--no-build
 
 For redistribution retain `LICENSE`, `THIRD_PARTY_NOTICES.md`, browser license/font notices and bundled `fonts-liberation-1.07.4-source.tar.gz`. Runtime images already contain these files. Supply configuration only at container startup, never through build arguments. Private package access, GitHub/GHCR delivery and public deployment need separate qualification.
 
-## Local 1.3.0-rc.1 qualification
+## Local v1.3.0 release preparation
 
-The unpublished candidate is described in [candidate/upgrade and rollback guide](V1.3_RELEASE_CANDIDATE.md)
-and [Milestone B results](MILESTONE_B_FINAL_REPORT.md). Published Compose pull
+The unpublished prepared source is described in the [final qualification gate](V1.3_RELEASE_FINAL_GATE.md),
+[upgrade/rollback report](V1.3_UPGRADE_ROLLBACK_REPORT.md) and historical
+[candidate guide](V1.3_RELEASE_CANDIDATE.md). Published Compose pull
 default remains v1.2.1. For a local Compose build, explicitly set
-`HARBOR_IMAGE=harbor:1.3.0-rc.1` so the candidate does not receive a stable local
-tag; do not run it against owner data before approval and verified offline backup.
+`HARBOR_IMAGE=harbor:1.3.0-local` so the prepared source uses a separate local
+image name; do not run it against owner data before approval and verified offline backup.
 No tag, registry publication or deployment upgrade is performed by qualification.
 
 The 768 MiB runtime fixture completes under page-cache reclaim; it does not

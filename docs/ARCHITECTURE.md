@@ -114,7 +114,7 @@ Phase 6 exact-image live Telegram tests cover encrypted multipart/restart/recrea
 
 ## Open-source build boundary
 
-The immutable v1.0.0 release remains historical evidence. Current Docker builds use native `$BUILDPLATFORM` Node/Go stages and cross-compile static Linux AMD64/ARM64 binaries. `HARBOR_VERSION` injects runtime diagnostics and the OCI version. Current source defaults to `1.3.0-rc.1` and accepts stable or numbered `-dev.N`/`-rc.N` build versions; publishing gates still require stable versions. Published Compose image selection remains v1.2.1 until an authorized release. No database, encryption or Telegram format changes are introduced. Runtime images include MIT/third-party notices and corresponding Liberation font source.
+The immutable v1.0.0 release remains historical evidence. Current Docker builds use native `$BUILDPLATFORM` Node/Go stages and cross-compile static Linux AMD64/ARM64 binaries. `HARBOR_VERSION` injects runtime diagnostics and the OCI version. Current source defaults to `1.3.0` and accepts stable or numbered `-dev.N`/`-rc.N` build versions; publishing gates still require stable versions. Published Compose image selection remains v1.2.1 until an authorized release. No database, encryption or Telegram format changes are introduced. Runtime images include MIT/third-party notices and corresponding Liberation font source.
 
 Pull-request/main CI has read-only permissions, no Telegram credentials and isolated local-adapter image smoke tests. A separate annotated-stable-tag gate invokes full CI before an owner-gated GHCR job receives package-write permission. Main/PR cannot publish. SBOM/minimal BuildKit provenance use source-only contexts; runtime state/secrets never enter image layers/cache. Remote publishing is NOT TESTED until an approved GitHub run. See [Actions evidence](GITHUB_ACTIONS_REPORT.md) and [publishing guide](GHCR_PUBLISHING_GUIDE.md).
 
@@ -124,7 +124,7 @@ Compose defaults to the versioned GHCR image, with source builds retained throug
 
 ## Milestone B qualification boundary
 
-Current local candidate is `1.3.0-rc.1`; published v1.2.1 remains separate.
+Current local prepared source is `1.3.0`; published v1.2.1 remains separate. Exact final-image qualification belongs in [the final gate](V1.3_RELEASE_FINAL_GATE.md); no tag or publication is implied.
 [Milestone B](MILESTONE_B_FINAL_REPORT.md) qualifies the combined implementation,
 real local browser media, bounded sustained resource use, conservative offline
 maintenance and current-source/exact-image Telegram integrity. It introduces no
