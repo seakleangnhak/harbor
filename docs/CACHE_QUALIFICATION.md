@@ -1,5 +1,11 @@
 # Ciphertext cache qualification — Milestone A
 
+Milestone B retains this cache policy and adds the authenticated boundary-replay
+fix, staged-buffer reuse, sustained eviction/mixed tests and offline maintenance.
+See [current preview results](PREVIEW_PERFORMANCE_REPORT.md) and
+[Milestone B decision](MILESTONE_B_FINAL_REPORT.md). Numbers below retain their
+Milestone A source, timing and workload scope; they are not silently relabeled.
+
 Date: 2026-10-22. Scope: maintained public-export source, preserved checkpoint `59aa6d8` plus Milestone A changes. Status: **PASS for cache correctness and the bounded current-source live comparison below**. Focused cache races and the full Telegram-tagged race suite pass. Release-candidate acceptance remains coordinator-owned. Historical Telegram runs do not qualify this cache.
 
 ## Behavior and security boundaries

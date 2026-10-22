@@ -2,6 +2,14 @@
 
 Milestone A qualification: see [final report](TRANSFER_ENGINE_FINAL_REPORT.md) and [candidate decision](V1.3_RELEASE_CANDIDATE.md). Scope: maintained source after v1.2.1, development build `1.3.0-dev.1`. No release or deployment.
 
+Milestone B extends this dated baseline with retained authenticated reader buffers,
+metadata-only HTTP preflight, reusable private staged-part buffers and exclusive
+offline local storage maintenance. Queue geometry, authenticated format and
+publication invariants remain unchanged. Fresh sustained mixed workloads, real
+browser media, full-disk retry and preview SIGKILL results live in the
+[Milestone B final report](MILESTONE_B_FINAL_REPORT.md); use the
+[candidate gate](V1.3_RELEASE_CANDIDATE.md) for current build identity.
+
 ## Bottlenecks found
 
 - Browser awaited each 100 MiB commit before sending the next 4 MiB part. The upload mutex covered remote I/O and status allowed only one pending chunk, so frontend concurrency alone could not fix the stall.

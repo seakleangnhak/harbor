@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0-rc.1 — 2026-10-22 (local candidate, unpublished)
+
+- Durable bounded background saving and next-file handoff; distinguish browser acceptance, remote storage and verified publication. Keep existing 100 MiB storage chunks and 4 MiB client parts.
+- Ciphertext-only authenticated read cache and cold-miss/worker-lock fixes, qualified separately in Milestone A.
+- Retain a reader's authenticated chunk through boundary replay, avoid remote reads for conditional/invalid-range responses, and preflight the first satisfiable range.
+- Reuse one private staging-part buffer during assembly, preserving nonce, authenticated identity and hash checks.
+- Offline storage diagnostics and explicitly confirmed, audited cleanup of disposable cache and verified published staging leftovers. No remote garbage collection or deletion of recoverable jobs.
+- Expanded sustained mixed-load, real PDF/video, large-directory, preview-crash and full-staging-disk regression fixtures. Qualification and candidate decision: [Milestone B](docs/MILESTONE_B_FINAL_REPORT.md).
+
 ## 1.2.1 — 2026-10-22
 
 - Pass the required `Error` reason when cancelling PDF.js text streams. This prevents late worker messages from enqueueing or closing an already cancelled native stream, observed intermittently in WebKit after v1.2.0 qualification.

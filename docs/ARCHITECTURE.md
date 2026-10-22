@@ -1,5 +1,27 @@
 # Architecture
 
+Milestone B adds narrow reader/staging optimizations and offline maintenance;
+storage geometry, encrypted envelopes, queue admission and final remote
+verification remain unchanged. See [qualification](MILESTONE_B_FINAL_REPORT.md).
+
+HTTP content uses a metadata-only `http.ServeContent` HEAD probe to evaluate
+conditional requests and ranges before authenticated body preflight. HEAD,
+304, 412 and 416 responses require no chunk fetch. A successful body still
+authenticates its starting chunk before sending headers; later read failures
+abort the connection. Unsatisfiable leading ranges are skipped consistently
+with the standard library. Each reader retains at most one authenticated chunk
+until replacement or close, including boundary replay. Assembly reuses one
+private 4 MiB staging buffer only after the preceding plaintext is consumed.
+
+`storage-diagnostics` bypasses normal startup, migrations, key/session loading
+and cache initialization. It takes the existing exclusive offline drive lock
+and inspects metadata plus local ciphertext inventory. `storage-cleanup`
+requires the current full plan digest, revalidates file identity and metadata,
+and syncs audit intent before unlink. Only owned disposable cache and redundant
+parts of verified published files qualify. Active/failed jobs, unknown files,
+canonical blobs and Telegram messages are preserved. See
+[maintenance policy](STORAGE_HYGIENE_REPORT.md).
+
 Last verified: 2026-10-22. Product name: **Harbor** (Telegram Private Drive).
 
 ## Process and boundaries
@@ -99,3 +121,14 @@ Pull-request/main CI has read-only permissions, no Telegram credentials and isol
 ## v1.1.0 distribution
 
 Compose defaults to the versioned GHCR image, with source builds retained through `--build`. Runtime/OCI/frontend source versions agree. Exact-image smoke initializes a fresh protected web setup, verifies owner login, encrypted multipart restart/resume/recreation and legacy CLI initialization. Package identity and expected visibility are explicit release policies; default visibility remains private, while this existing public package uses an owner-verified `public` setting. The workflow never changes visibility. See [v1.1.0 qualification](RELEASE_1.1.0.md).
+
+## Milestone B qualification boundary
+
+Current local candidate is `1.3.0-rc.1`; published v1.2.1 remains separate.
+[Milestone B](MILESTONE_B_FINAL_REPORT.md) qualifies the combined implementation,
+real local browser media, bounded sustained resource use, conservative offline
+maintenance and current-source/exact-image Telegram integrity. It introduces no
+storage format/schema or queue/concurrency change. Resource measurements include
+file-cache reclaim and test clients; cold full-envelope latency and remote orphan
+ambiguity remain explicit limits. Upgrade/rollback requires stopped sole ownership,
+quiesced jobs and verified encrypted backup; see [candidate guide](V1.3_RELEASE_CANDIDATE.md).

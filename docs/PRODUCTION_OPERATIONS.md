@@ -1,5 +1,42 @@
 # Harbor operations and recovery
 
+## Offline storage diagnostics and scoped cleanup
+
+Development builds include `storage-diagnostics` and `storage-cleanup`.
+Published v1.2.1 does not include these commands. See
+[Milestone B](MILESTONE_B_FINAL_REPORT.md) for tested build identity and limits.
+
+1. Finish or cancel active work, take a verified encrypted backup, and stop Harbor.
+2. Run diagnostics with the same image, protected volume and runtime user. For Compose:
+
+   ```sh
+   umask 077
+   docker compose stop drive
+   docker compose run --rm --no-deps drive storage-diagnostics > storage-plan.json
+   ```
+
+3. Require a successful command exit. Review `cleanup_blocked`, candidates,
+   reclaimable bytes and recoverable/missing counts. Unknown local/remote
+   candidates are informational and are not deletion targets.
+4. Only after reviewing the current plan, substitute its exact `plan_sha256`:
+
+   ```sh
+   docker compose run --rm --no-deps drive storage-cleanup --confirm PLAN_SHA256
+   ```
+
+5. Inspect the result and private `storage-cleanup.jsonl` audit, rerun diagnostics,
+   then start Harbor with `docker compose up -d drive`.
+
+Diagnostics open existing SQLite metadata without logical mutation; SQLite may
+update WAL/SHM coordination sidecars. No key, Telegram authorization or network
+connection is needed. Cleanup refuses stale plans or an active drive lock.
+Interruption requires a fresh diagnostic/confirmation; never reuse an old plan
+or remove unknown files manually. These commands cannot repair missing remote
+chunks, infer abandonment from age, enumerate Telegram or reclaim unknown
+remote objects. Unpublished recovery staging outside the data directory stays
+an explicit operator investigation. The last successful content-integrity
+timestamp remains unknown because current storage does not persist it.
+
 Scope: single-owner personal use on a trusted local host. This runbook does not establish public internet readiness, independent security audit, guaranteed Telegram durability, or live cross-datacenter coverage. Current qualification belongs in the [v1.0 release report](PHASE6_FINAL_REPORT.md), [release checklist](RELEASE_CHECKLIST.md) and [known limitations](KNOWN_LIMITATIONS.md). [Recovery quickstart](RECOVERY_QUICKSTART.md) gives clean-environment/off-host steps; Phase 5 reports remain historical evidence.
 
 ## Protected installation
@@ -146,3 +183,20 @@ Phase 6 qualifies real Telegram in the exact exported image: multipart resume, r
 Compose targets `ghcr.io/seakleangnhak/harbor:1.2.1` by default. Use `--no-build --pull always` to pull the published release, or `--build` to build the checkout locally under the configured `HARBOR_IMAGE` reference; a local build does not push anything. [Publishing guide](GHCR_PUBLISHING_GUIDE.md) explains protected tags, image digests and approval requirements. Confirm completed release qualification, then set `HARBOR_IMAGE` to its independently verified immutable digest, retain the same project/service/volume identity, create and verify an encrypted offline backup, and follow the upgrade/rollback procedure above. Never run initialization against an existing bound volume or change a key to make an upgrade start. Published attestations are build metadata, not independent security certification.
 
 For redistribution retain `LICENSE`, `THIRD_PARTY_NOTICES.md`, browser license/font notices and bundled `fonts-liberation-1.07.4-source.tar.gz`. Runtime images already contain these files. Supply configuration only at container startup, never through build arguments. Private package access, GitHub/GHCR delivery and public deployment need separate qualification.
+
+## Local 1.3.0-rc.1 qualification
+
+The unpublished candidate is described in [candidate/upgrade and rollback guide](V1.3_RELEASE_CANDIDATE.md)
+and [Milestone B results](MILESTONE_B_FINAL_REPORT.md). Published Compose pull
+default remains v1.2.1. For a local Compose build, explicitly set
+`HARBOR_IMAGE=harbor:1.3.0-rc.1` so the candidate does not receive a stable local
+tag; do not run it against owner data before approval and verified offline backup.
+No tag, registry publication or deployment upgrade is performed by qualification.
+
+The 768 MiB runtime fixture completes under page-cache reclaim; it does not
+establish spare memory or justify more workers, queue slots or preview concurrency.
+100 MiB authenticated chunks remain, so a cold tiny range can wait about 22 seconds
+on the tested Telegram connection. Warm locality helps; two-entry cache thrash
+can add I/O. Keep free persistent-disk capacity for encrypted staging, cache,
+SQLite/WAL and backups; there is no application-wide disk quota. Run offline
+maintenance only with a reviewed current plan; unknown/recoverable data is retained.

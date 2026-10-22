@@ -119,3 +119,39 @@ Installed gotd/td: **v0.162.0**. Reviewed source paths: `telegram/downloader/{bu
 Existing bounded concurrency remains unchanged. Current live evidence supports retaining the cache for repeated same-chunk reads; synthetic eviction results expose a local cost when the working set exceeds its two entries. Neither supports raising cache/worker limits or advertising universal speedup. Historical Phase 3/6 numbers remain context, not a comparable control group.
 
 Next measurements: representative PDF/video HTTP patterns, full-size combined read/write memory, sustained throughput and legitimate live cross-DC retrieval when safely available. Full Telegram-tagged race coverage passed; earlier compiler memory exhaustion remains a build-resource failure, not an application race. This scoped PASS supplies current live performance evidence to the coordinator's overall release decision; it does not replace full milestone acceptance.
+
+## Milestone B current-source live requalification
+
+Date: 2026-10-22. Direct current-source Telegram test **PASS**, controller
+173.859 s; compiled test SHA-256
+`80b0d17cd23c8ebd5f3714c1832326048be3a4a63b1b335a1160e81ff0fa40d8`.
+100 MiB + 17 bytes, 4 MiB client parts, one saving worker; 768 MiB hard/no swap,
+512 MiB Go soft, two CPUs. Fresh isolated metadata/key and copied authorized
+session. Source lock held until target stopped and copied authorization removed;
+source authorization unchanged. Zero retries and zero remote deletions.
+
+| Measurement | Milestone A | Milestone B |
+| --- | ---: | ---: |
+| Upload including final remote verification | 47.374 s / 2.111 MiB/s | 38.078 s / 2.626 MiB/s |
+| Full verified download | 23.439 s / 4.266 MiB/s | 19.119 s / 5.230 MiB/s |
+| Four uncached overlapping ranges | 90.893 s / 4 Gets | 89.278 s / 4 Gets |
+| Four ranges, cache initially empty | 23.025 s / 1 Get | 22.008 s / 1 Get |
+| First cache-enabled range | 22.774 s | 21.764 s |
+| Subsequent cache-enabled ranges | 97.472 / 75.900 / 78.016 ms | 87.417 / 77.087 / 79.248 ms |
+
+This is one run per milestone, same fixture/account/hardware class but different
+source and uncontrolled network/provider scheduling. Observed throughput is not
+a causal or universal improvement claim. Fixed-order cache-off then cache-on
+comparison reduces actual returned ciphertext 419,430,528 → 104,857,632 bytes
+and adapter Gets 4 → 1 (three reused hits out of four logical reads). Each warm
+hit still authenticates/decrypts/hashes the complete chunk. A cold 256 KiB read
+therefore still has roughly 400× returned-ciphertext amplification.
+
+Full-file SHA-256, exact 43-byte cross-chunk range, two concurrent small uploads,
+interrupted-worker recovery and engine/session recreation without source
+reselection pass. Total accounting: 16 Gets / 740,295,219 returned ciphertext
+bytes; six Puts / 109,052,113 offered ciphertext bytes including canceled
+attempts. These are adapter counters, **not native RPC counts or wire traffic**.
+Live cross-DC and live browser PDF/video cold/seek latency remain **NOT TESTED**.
+Local browser media results belong in [preview qualification](PREVIEW_PERFORMANCE_REPORT.md).
+Ignored logs/result/metrics: `output/milestone-b/live-current/`.

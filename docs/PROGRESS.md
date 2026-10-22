@@ -1,5 +1,45 @@
 # Progress
 
+## Milestone B — PASS, local 1.3.0-rc.1 only
+
+Starting checkpoint `b6ae39e` preserved. Reader boundary replay avoids a duplicate
+100 MiB fetch/decrypt; HTTP HEAD/304/412/416 avoids body reads; staged assembly
+reuses one private 4 MiB buffer. Offline diagnostics and explicitly confirmed,
+revalidated/audited local cleanup preserve unknown data, recoverable jobs and all
+Telegram objects. No format/schema/queue/worker increase or plaintext derivative.
+
+Full default/tagged Go tests, both race modes/vets, 48 frontend tests/typecheck/build,
+12 Chromium/WebKit suites and 129 scoped axe checks pass. Latest range fix has
+four-mode focused recheck. Real PDF/image/WebM play/seek, mobile/themes and mixed
+upload/SHA pass; MOV works in tested WebKit and is unsupported in Chromium.
+10,000-folder listing loads in 318/509 ms in one local fixture observation.
+
+Identical-harness 65 s sustained mixed pair plus restart/eviction passes at
+768 MiB hard/no swap, 512 MiB Go soft: current 60 uploads, 123 full downloads,
+366 ranges, two 300 MiB copies. Lifetime process RSS 520.05 MiB; cgroup reaches
+its limit with substantial reclaim, so spare headroom is not claimed. Allocation
+benchmark falls about 96%; single local pair is not a universal speed claim.
+Actual staging ENOSPC/retry, preview SIGKILL, backup/fresh restore and copy crash
+checks pass. Remote orphan count stays unknown; actual cleanup SIGKILL untested.
+
+Current-source live 100 MiB + 17 upload including verification: 38.078 s /
+2.626 MiB/s; full download 19.119 s / 5.230 MiB/s. Initially cold cached range
+21.764 s, warm 77–87 ms; four Gets → one for four overlapping reads. Cold whole-
+chunk latency persists. Exact local RC image additionally passes 5 MiB HTTP
+multipart, SIGKILL recovery without reselection, SHA/206, recreation/session
+persistence and clean shutdown. Source authorization unchanged/copies removed.
+
+Local image `harbor:1.3.0-rc.1`, ARM64 ID
+`sha256:344373078e8bac44a5a6732d8b1fb6a23a164d589a39ff484fbd0ff0273bba2f`.
+Published v1.2.1/Compose pull default retained. No push, tag, image publication or
+Dokploy upgrade. Cross-DC, live browser media cold latency, physical Safari/iOS,
+power loss and long live soaks remain NOT TESTED. Local qualification is not an
+independent audit or public-internet approval.
+
+[Final report](MILESTONE_B_FINAL_REPORT.md), [preview](PREVIEW_PERFORMANCE_REPORT.md),
+[memory](MEMORY_QUALIFICATION.md), [mixed load](MIXED_WORKLOAD_REPORT.md),
+[hygiene](STORAGE_HYGIENE_REPORT.md), [candidate/rollback](V1.3_RELEASE_CANDIDATE.md).
+
 ## Milestone A transfer stabilization — PASS, local candidate only
 
 Maintained export branch `codex/transfer-engine-stabilization`; build `1.3.0-dev.1`.

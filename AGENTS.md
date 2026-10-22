@@ -12,6 +12,15 @@ Build a private single-owner drive. Keep changes small, inspect existing code, v
 
 ## Contracts and security
 
+### Milestone B preview, memory and hygiene ownership override
+
+- Preserve Milestone A checkpoint `b6ae39e`, original runtime and all releases. Local reviewed commits only; no push, tags, publication or deployment. Keep 100 MiB storage chunks, 4 MiB client parts, two pending/upload, four globally and one saving worker. Coordinator alone handles serialized authorized live Telegram and private state.
+- Agent A: `internal/storage/reader.go`, `read_cache.go`, cache/reader-only new tests and `docs/PREVIEW_PERFORMANCE_REPORT.md`; propose API/frontend contract changes before editing outside ownership. Preserve authenticated reads and remote completion verification. No persisted plaintext previews.
+- Agent B: `internal/storage/engine.go`, `local.go`, `transport.go`, memory-only new tests/control scripts and `docs/MEMORY_QUALIFICATION.md`, `docs/MIXED_WORKLOAD_REPORT.md`. Capture baseline before production edits. Coordinate shared buffer/cache contracts with A and coordinator; do not edit pipeline/reader/cache files.
+- Agent C: new `internal/storage/hygiene*.go`, new `cmd/drive/hygiene*.go` and their tests, `docs/STORAGE_HYGIENE_REPORT.md`. Coordinator wires command dispatch in main. Default read-only; cleanup requires offline exclusive drive lock, explicit scoped confirmation, complete revalidation and audit evidence. Never delete Telegram objects, recoverable jobs, original content or unknown files.
+- Agent D (second wave): preview/large-directory browser harnesses and new Milestone B QA scripts/tests only. Coordinator owns frontend/API integration, Docker/build/version, architecture/operations/final docs and all real credentials. Agents never read actual env/session/key/DB/archive/live private logs and never commit.
+- Use generated fixtures and established isolated offline non-root test containers with read-only source/tooling, explicit clean environment and bounded resources. Reviewed host control harnesses may orchestrate Docker. Dependency-fetching build stages receive no runtime secrets. Live tests remain coordinator-only, bounded, serialized with source authorization lock until clones stop and copied authorization is removed. Record unsupported/unverified scope honestly.
+
 ### Milestone A transfer stabilization ownership override
 
 - Maintained source is this sanitized export. Preserve checkpoint `59aa6d8` and all original runtime/history. Local commits only; no push, tag, publication or deployment upgrade. User authorizes coordinator-only bounded live Telegram qualification with isolated data and serialized authorization; this supersedes earlier task-specific synthetic-only limits for that qualification.

@@ -1,5 +1,5 @@
 ARG SOURCE_DATE_EPOCH=0
-ARG HARBOR_VERSION=1.3.0-dev.1
+ARG HARBOR_VERSION=1.3.0-rc.1
 FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS web
 WORKDIR /src/web
 COPY web/package*.json ./
