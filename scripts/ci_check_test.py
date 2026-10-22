@@ -310,6 +310,15 @@ class CICheckTest(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(argparse.ArgumentTypeError):
                 check.version(value)
 
+    def test_development_builds_do_not_relax_stable_release_validation(self):
+        for value in ('1.3.0-dev.1', '1.3.0-rc.1'):
+            self.assertEqual(check.build_version(value), value)
+            with self.assertRaises(argparse.ArgumentTypeError):
+                check.version(value)
+        for value in ('1.3.0-dev.0', '1.3.0-rc', '1.3.0-dev.1;echo secret', '1.3.0-rc.1\n', '01.3.0-dev.1'):
+            with self.subTest(value=value), self.assertRaises(argparse.ArgumentTypeError):
+                check.build_version(value)
+
     def test_image_runtime_contract(self):
         value = {'Os': 'linux', 'Architecture': 'arm64', 'Config': {'User': '65532',
                  'Entrypoint': ['/app/drive'], 'Healthcheck': {'Test': ['CMD', '/app/drive', 'health']},
@@ -329,7 +338,7 @@ class CICheckTest(unittest.TestCase):
             member.mode = 0o755
             archive.addfile(member)
         for target_version, web_setup in (('1.0.1', False), ('1.0.10', False),
-                                          ('1.1.0', True), ('1.10.0', True)):
+                                          ('1.1.0', True), ('1.10.0', True), ('1.3.0-dev.1', True)):
             metadata = {'Os': 'linux', 'Architecture': 'arm64', 'Config': {'User': '65532',
                         'Entrypoint': ['/app/drive'], 'Healthcheck': {'Test': ['CMD', '/app/drive', 'health']},
                         'Labels': {'org.opencontainers.image.version': target_version}}}

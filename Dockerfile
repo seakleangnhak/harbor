@@ -1,5 +1,5 @@
 ARG SOURCE_DATE_EPOCH=0
-ARG HARBOR_VERSION=1.2.1
+ARG HARBOR_VERSION=1.3.0-dev.1
 FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS web
 WORKDIR /src/web
 COPY web/package*.json ./
@@ -23,7 +23,7 @@ ARG GO_TAGS=telegram
 ARG HARBOR_VERSION
 ARG TARGETOS
 ARG TARGETARCH
-RUN printf '%s\n' "$HARBOR_VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' && \
+RUN printf '%s\n' "$HARBOR_VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(dev|rc)\.[1-9][0-9]*)?$' && \
     CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" GOGC=40 go build -p 1 -tags "$GO_TAGS" -trimpath -buildvcs=false -ldflags="-s -w -X main.buildVersion=$HARBOR_VERSION" -o /drive ./cmd/drive
 RUN CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" GOGC=40 go build -p 1 -trimpath -buildvcs=false -ldflags="-s -w" -o /harbor-recovery ./cmd/harbor-recovery
 RUN mkdir -p /runtime/data && chmod 0700 /runtime/data

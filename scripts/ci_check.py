@@ -40,6 +40,14 @@ def version(value):
     return value
 
 
+def build_version(value):
+    base = value.split('-', 1)[0]
+    version(base)
+    if value != base and not re.fullmatch(re.escape(base) + r'-(?:dev|rc)\.[1-9][0-9]*', value):
+        raise argparse.ArgumentTypeError('Use stable version or numbered dev/rc build')
+    return value
+
+
 def verified_ci(commit):
     repository = os.environ.get('GITHUB_REPOSITORY', '')
     if (not isinstance(commit, str) or not re.fullmatch(r'[0-9a-f]{40}', commit)
@@ -361,7 +369,7 @@ def docker_smoke(image, platform, target_version, revision=None):
     created = []
     volume_created = False
     network_created = False
-    web_setup = tuple(map(int, target_version.split('.'))) >= (1, 1, 0)
+    web_setup = tuple(map(int, build_version(target_version).split('-', 1)[0].split('.'))) >= (1, 1, 0)
     setup_token = secrets.token_urlsafe(32)
     options = ['--platform', platform, '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
                '--network', network, '--dns', '127.0.0.1',
@@ -588,11 +596,11 @@ def main():
     published.add_argument('--tag', required=True)
     published.add_argument('--digest', required=True)
     reproduce = commands.add_parser('reproducible')
-    reproduce.add_argument('--version', required=True, type=version)
+    reproduce.add_argument('--version', required=True, type=build_version)
     smoke = commands.add_parser('docker-smoke')
     smoke.add_argument('--image', required=True)
     smoke.add_argument('--platform', choices=('linux/amd64', 'linux/arm64'), required=True)
-    smoke.add_argument('--version', required=True, type=version)
+    smoke.add_argument('--version', required=True, type=build_version)
     smoke.add_argument('--revision', help='Also verify all release OCI labels against this commit and GITHUB_REPOSITORY')
     args = parser.parse_args()
     try:

@@ -5,7 +5,7 @@ services:
       context: .
       args:
         GO_TAGS: ${GO_TAGS:-telegram}
-        HARBOR_VERSION: ${HARBOR_VERSION:-1.2.1}
+        HARBOR_VERSION: ${HARBOR_VERSION:-1.3.0-dev.1}
     ports:
       - "127.0.0.1:${DRIVE_PORT:-8080}:8080"
     environment:
