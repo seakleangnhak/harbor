@@ -41,7 +41,7 @@ export default function PdfPreview({ id, name }: { id: string; name: string }) {
     const task = getDocument({ url: contentUrl(id), withCredentials: true, disableAutoFetch: true, disableStream: true, rangeChunkSize: 256 * 1024, disableFontFace: true, enableXfa: false, useWasm: false, useWorkerFetch: false, BinaryDataFactory: BundledPdfData, maxImageSize: 16_777_216, canvasMaxAreaInBytes: 16_777_216 })
     let cancelled = false
     task.promise.then(pdf => { if (!cancelled) setDocument(pdf) }).catch(error => { if (!cancelled) { setError(errorMessage(error)); setLoading(false) } })
-    return () => { cancelled = true; void task.destroy() }
+    return () => { cancelled = true; void task.destroy().catch(() => {}) }
   }, [id])
 
   useEffect(() => {
