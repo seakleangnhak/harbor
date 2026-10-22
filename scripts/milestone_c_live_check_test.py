@@ -1,5 +1,7 @@
 """Synthetic safety checks; no Docker or private inputs."""
 import argparse
+import ast
+import json
 from pathlib import Path
 import threading
 import unittest
@@ -53,6 +55,50 @@ class LiveSafetyTests(unittest.TestCase):
         for value in ('?', '-1MB', '1024', '1PB'):
             with self.assertRaises(ValueError):
                 live.network_bytes(value)
+
+    def test_archive_only_create_removes_source_mount_and_checks_actual_mounts(self):
+        source = ast.parse(Path(live.__file__).read_text())
+        create = next(node for node in ast.walk(source) if isinstance(node, ast.FunctionDef) and node.name == 'create')
+        sandbox = ['--read-only', '--volume', 'fixture-source:/live', '--volume', 'fixture-restored:/restore']
+        mounts = [{'Name': 'fixture-restored', 'Destination': '/restore'}]
+        calls = []
+
+        def docker(*parts):
+            calls.append(parts)
+            return json.dumps(mounts).encode() if parts[0] == 'inspect' else b''
+
+        scope = dict(sandbox=sandbox, runtime={'DRIVE_DATA_DIR': '/restore/fresh'},
+                     volume='fixture-source', restore_volume='fixture-restored', container='fixture-app',
+                     current_image='fixture-image', check=live.check, docker=docker, json=json, report={})
+        exec(compile(ast.Module(body=[create], type_ignores=[]), '<actual create closure>', 'exec'), scope)
+        scope['create']()
+        self.assertNotIn('fixture-source:/live', calls[0])
+        self.assertIn('fixture-restored:/restore', calls[0])
+        self.assertIn('fixture-source:/live', sandbox, 'Shared recovery-one-shot mounts must remain intact')
+        self.assertEqual(scope['report']['archive_only_mount_proofs'], [{
+            'data_dir': '/restore/fresh', 'original_live_mount_absent': True,
+            'original_volume_absent': True, 'restore_mount_present': True}])
+        for unexpected in ([{'Name': 'fixture-source', 'Destination': '/unexpected'}, *mounts],
+                           [{'Name': 'unrelated', 'Destination': '/live'}, *mounts], []):
+            with self.subTest(mounts=unexpected), self.assertRaises(RuntimeError):
+                mounts[:] = unexpected
+                scope['create']()
+        scope['runtime']['DRIVE_DATA_DIR'] = '/live'
+        calls.clear()
+        scope['create']()
+        self.assertIn('fixture-source:/live', calls[0])
+        self.assertEqual(len(calls), 1, 'Normal startup must not claim archive-only restore proof')
+
+    def test_live_pacing_uses_180_seconds_for_supported_intervals(self):
+        source = ast.parse(Path(live.__file__).read_text())
+        report = next(node.value for node in ast.walk(source) if isinstance(node, ast.Assign)
+                      and any(isinstance(target, ast.Name) and target.id == 'report' for target in node.targets))
+        expression = next(value for key, value in zip(report.keys, report.values)
+                          if isinstance(key, ast.Constant) and key.value == 'paced_cycle_seconds')
+        code = compile(ast.Expression(expression), '<actual live pacing>', 'eval')
+        for seconds in (900, 1800):
+            with self.subTest(duration_seconds=seconds):
+                self.assertEqual(eval(code, {'args': argparse.Namespace(duration_seconds=seconds)}), 180)
 
 
 if __name__ == '__main__':

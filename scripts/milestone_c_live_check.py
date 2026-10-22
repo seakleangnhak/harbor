@@ -127,7 +127,7 @@ def run(args):
               'memory_limit_bytes': 768 << 20, 'go_memory_limit': '512MiB', 'samples': [],
               'resource_method': 'sampled docker stats; not lifetime RSS peak',
               'requested_interval_seconds': args.duration_seconds, 'cycles': [],
-              'paced_cycle_seconds': max(60, args.duration_seconds / 15),
+              'paced_cycle_seconds': max(180, args.duration_seconds / 15),
               'budget_method': 'conservative application encrypted-payload reservations, not MTProto RPC/wire counters',
               'upload_budget_bytes': 1536 * MIB, 'download_budget_bytes': 4096 * MIB,
               'original_session_unchanged': False, 'copied_authorization_removed': False}
@@ -197,7 +197,21 @@ def run(args):
                 docker('run', '--rm', '--network=none', *sandbox, current_image, 'init')
 
                 def create():
-                    docker('create', '--name', container, '--publish=127.0.0.1::8080', *sandbox, current_image)
+                    options = list(sandbox)
+                    if runtime['DRIVE_DATA_DIR'].startswith('/restore/'):
+                        index = options.index(volume + ':/live')
+                        check(index > 0 and options[index - 1] == '--volume', 'Generated live mount is not an explicit volume')
+                        del options[index - 1:index + 1]
+                    docker('create', '--name', container, '--publish=127.0.0.1::8080', *options, current_image)
+                    if runtime['DRIVE_DATA_DIR'].startswith('/restore/'):
+                        mounts = json.loads(docker('inspect', '--format', '{{json .Mounts}}', container))
+                        check(all(mount['Destination'] != '/live' and mount.get('Name') != volume for mount in mounts),
+                              'Restored application still exposes generated source volume')
+                        check(any(mount['Destination'] == '/restore' and mount.get('Name') == restore_volume for mount in mounts),
+                              'Restored application lacks archive restore volume')
+                        report.setdefault('archive_only_mount_proofs', []).append({
+                            'data_dir': runtime['DRIVE_DATA_DIR'], 'original_live_mount_absent': True,
+                            'original_volume_absent': True, 'restore_mount_present': True})
 
                 create()
                 docker('cp', '-a', '-', container + ':/live', data=session_archive(session.read_bytes()))
