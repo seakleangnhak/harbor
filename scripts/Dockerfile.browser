@@ -9,7 +9,7 @@ FROM mcr.microsoft.com/playwright:v1.56.1-noble@sha256:f1e7e01021efd65dd1a2c5606
 WORKDIR /tooling
 RUN npm install --ignore-scripts --no-audit --no-fund --save-exact playwright-core@1.56.1 axe-core@4.14.0
 COPY --from=harbor /app /app
-COPY scripts/browser_check.cjs scripts/account_check.js scripts/preview_check.js scripts/transport_check.js scripts/phase4_large_check.js scripts/milestone_b_preview_check.js /checks/
+COPY scripts/browser_check.cjs scripts/account_check.js scripts/preview_check.js scripts/transport_check.js scripts/phase4_large_check.js scripts/milestone_b_preview_check.js scripts/milestone_c_mobile_check.js scripts/milestone_c_media_soak_check.js /checks/
 COPY --from=preview-fixtures /fixtures/seek.webm /fixtures/seek.mov /checks/
 RUN for check in /checks/*.js /checks/*.cjs; do node --check "$check" || exit 1; done \
     && cp /tooling/node_modules/axe-core/axe.min.js /checks/axe.min.js \

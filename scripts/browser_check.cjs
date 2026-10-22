@@ -10,7 +10,7 @@ const { spawn } = require('node:child_process')
 
 const engine = process.argv[2] || 'chromium', requested = process.argv[3] || 'all'
 assert(['chromium', 'webkit'].includes(engine), 'Select chromium or webkit')
-const checks = { account: 'account_check.js', preview: 'preview_check.js', transport: 'transport_check.js', large: 'phase4_large_check.js', 'milestone-b': 'milestone_b_preview_check.js', 'large-b': 'phase4_large_check.js' }
+const checks = { account: 'account_check.js', preview: 'preview_check.js', transport: 'transport_check.js', large: 'phase4_large_check.js', 'milestone-b': 'milestone_b_preview_check.js', 'large-b': 'phase4_large_check.js', 'mobile-c': 'milestone_c_mobile_check.js', 'media-soak-c': 'milestone_c_media_soak_check.js' }
 assert(requested === 'all' || Object.hasOwn(checks, requested), 'Select all, account, preview, transport or large')
 assert(process.platform === 'linux' && fs.existsSync('/.dockerenv'), 'Disposable Docker sandbox required')
 assert(process.getuid() !== 0, 'Browser fixture must run without root')
@@ -144,7 +144,7 @@ let deadline
 Promise.race([
   (async () => {
     browser = await (engine === 'webkit' ? webkit : chromium).launch({ headless: true, env: browserEnv, args: engine === 'chromium' ? ['--no-sandbox', '--disable-dev-shm-usage'] : [] })
-    for (const name of requested === 'all' ? ['account', 'preview', 'transport', 'large'] : [requested]) {
+    for (const name of requested === 'all' ? ['account', 'preview', 'transport', 'large', 'mobile-c'] : [requested]) {
       try { await runSuite(name) } catch {
         failures.push({ suite: name, result: 'FAIL' })
         console.error(JSON.stringify({ result: 'FAIL', suite: name, browser: engine, message: 'Suite failed; inspect its error.txt' }))
@@ -152,7 +152,7 @@ Promise.race([
     }
     assert(!failures.length, `Browser suites failed: ${failures.map(item => item.suite).join(', ')}`)
   })(),
-  new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('Browser qualification exceeded 15 minutes')), 15 * 60 * 1000) }),
+  new Promise((_, reject) => { const minutes = requested === 'media-soak-c' ? 35 : 15; deadline = setTimeout(() => reject(new Error(`Browser qualification exceeded ${minutes} minutes`)), minutes * 60 * 1000) }),
 ]).then(() => {
   const report = { result: 'PASS', browser: engine, adapter: 'local', live_telegram: 'NOT TESTED', suites: results }
   fs.writeFileSync(path.join(root, 'result.json'), JSON.stringify(report, null, 2))
