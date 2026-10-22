@@ -1,5 +1,36 @@
 # Progress
 
+## Milestone A transfer stabilization — PASS, local candidate only
+
+Maintained export branch `codex/transfer-engine-stabilization`; build `1.3.0-dev.1`.
+Checkpoint `59aa6d8` preserves all unreleased source/audit work; `c99caef` fixes
+remote success/failure SQL updates blocked behind a slow next browser body.
+No worker/queue/chunk-size increase. Cold-cache deadlock fix retained.
+
+Fresh default/tagged Go tests and both race variants, both vets, 48 frontend
+tests/typecheck/build, eight Chromium/WebKit suites and 108 scoped axe checks
+pass. Adequate-memory 8 GiB isolated VM closes tagged-race compiler blocker.
+Nine real child-process SIGKILL boundaries recover with SHA-256/no premature
+publication. Final-image executables pass encrypted backup/fresh restore and
+three-chunk copy SIGKILL recovery. Mixed production-size upload/copy/ranges pass
+at 768 MiB hard memory, but reach that limit; no headroom claim.
+
+Fresh isolated QR authorization enables bounded current-source live PASS:
+100 MiB + 17 upload including verification 47.374 s / 2.111 MiB/s; full download
+23.439 s / 4.266 MiB/s. Four overlapping ranges: 90.893 s/four Gets uncached,
+23.025 s/one Get cold cache; warm ranges 76–97 ms. Exact production image also
+passes live 5 MiB HTTP multipart, SIGKILL/restart without reselection, SHA/206,
+container recreation/session persistence and clean shutdown. Cloned sessions
+removed after stopping targets; original deployment stays healthy.
+
+[Final report](TRANSFER_ENGINE_FINAL_REPORT.md), [crash matrix](TRANSFER_CRASH_MATRIX.md),
+[performance](TELEGRAM_PERFORMANCE_COMPARISON.md), [cache](CACHE_QUALIFICATION.md),
+[candidate gate](V1.3_RELEASE_CANDIDATE.md) supersede historical PARTIAL entry below.
+Live cross-DC/PDF/video, physical iOS, power loss and sustained full-capacity
+stress remain NOT TESTED. Orphan/staging cleanup, cold 100 MiB fetch granularity
+and native large-download progress remain limits. No push, tag, publication or
+deployment upgrade.
+
 ## Background saving and read reuse — PARTIAL
 
 Current scope: overlap browser parts with durable backend saves while keeping 100 MiB Telegram chunks, 4 MiB client parts, encrypted staging and remote readback verification. Separate storage, frontend and reader-cache agents own disjoint files; coordinator owns contracts/API/startup/tests/docs. Source adds a two-chunk per-upload/four-chunk global staging window and a single joined saving worker; a sender/monitor handoff also lets the next small file start while prior storage work finishes. Cache only encrypted reader chunks in bounded private storage, authenticating every read. Final verification no longer holds the global metadata-mutation lock; publication repeats conflict/storage checks.
