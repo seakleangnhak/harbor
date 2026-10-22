@@ -67,7 +67,34 @@ type milestoneBMemorySample struct {
 	CPUUsec                                                uint64
 	MemoryMaxEvents, OOMEvents, OOMKills                   uint64
 	Goroutines, Pending, StagedParts                       int
+	PublishedIncomplete                                    int
+	MixedUploads, FullDownloads, RemoteGets, RemoteBytes   int64
 	DiskBytes, StagedBytes, CacheBytes                     int64
+}
+
+func milestoneCSoakDuration(value string) (time.Duration, error) {
+	if value == "" {
+		return 65 * time.Second, nil
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds < 1800 || seconds > 3600 {
+		return 0, fmt.Errorf("HARBOR_MILESTONE_C_SOAK_SECONDS must be 1800 through 3600")
+	}
+	return time.Duration(seconds) * time.Second, nil
+}
+
+func TestMilestoneCSoakDuration(t *testing.T) {
+	for value, want := range map[string]time.Duration{"": 65 * time.Second, "1800": 30 * time.Minute, "3600": time.Hour} {
+		duration, err := milestoneCSoakDuration(value)
+		if err != nil || duration != want {
+			t.Fatalf("valid duration %q: %v %v", value, duration, err)
+		}
+	}
+	for _, value := range []string{"-1", "0", "65", "1799", "3601", "1m", "1800.0"} {
+		if _, err := milestoneCSoakDuration(value); err == nil {
+			t.Fatalf("accepted invalid soak duration %q", value)
+		}
+	}
 }
 
 func milestoneBDiskSize(path string) int64 {
@@ -108,7 +135,12 @@ func TestMilestoneBSustainedMemoryBudget(t *testing.T) {
 	if os.Getenv("HARBOR_MILESTONE_B_MEMORY") != "1" {
 		t.Skip("requires isolated 768 MiB runtime, disk-backed scratch and GOMEMLIMIT=512MiB")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	mixedDuration, err := milestoneCSoakDuration(os.Getenv("HARBOR_MILESTONE_C_SOAK_SECONDS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	longSoak := mixedDuration >= 30*time.Minute
+	ctx, cancel := context.WithTimeout(context.Background(), mixedDuration+3*time.Minute)
 	defer cancel()
 	dir := t.TempDir()
 	f, _ := milestoneFixture(t, dir, nil, storage.DefaultChunkSize)
@@ -160,6 +192,16 @@ func TestMilestoneBSustainedMemoryBudget(t *testing.T) {
 	started := time.Now()
 	var samples []milestoneBMemorySample
 	var sampleMu sync.Mutex
+	var mixedUploads, fullDownloads, lastUploadNS, lastDownloadNS atomic.Int64
+	var sampleStream *json.Encoder
+	if path := os.Getenv("HARBOR_MILESTONE_C_SAMPLES"); path != "" {
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = file.Close() })
+		sampleStream = json.NewEncoder(file)
+	}
 	sample := func() {
 		var mem runtime.MemStats
 		runtime.ReadMemStats(&mem)
@@ -174,15 +216,32 @@ func TestMilestoneBSustainedMemoryBudget(t *testing.T) {
 		s.HeapLive = live[0].Value.Uint64()
 		_ = f.db.QueryRow("SELECT COUNT(*) FROM storage_pending_chunks").Scan(&s.Pending)
 		_ = f.db.QueryRow("SELECT COUNT(*) FROM storage_parts").Scan(&s.StagedParts)
+		if err := f.db.QueryRow(`SELECT count(*) FROM nodes n LEFT JOIN storage_uploads u ON n.id=u.id
+ WHERE n.kind='file' AND NOT EXISTS(SELECT 1 FROM pending_deletions d WHERE d.node_id=n.id)
+ AND (u.id IS NULL OR u.status!='complete' OR u.sha256='' OR u.sha256!=n.sha256
+ OR n.size!=COALESCE((SELECT sum(c.size) FROM storage_chunks c WHERE c.upload_id=n.id),0))`).Scan(&s.PublishedIncomplete); err != nil {
+			t.Errorf("publication invariant query: %v", err)
+		}
+		s.MixedUploads, s.FullDownloads = mixedUploads.Load(), fullDownloads.Load()
+		s.RemoteGets, s.RemoteBytes = remote.gets.Load(), remote.bytes.Load()
 		sampleMu.Lock()
 		samples = append(samples, s)
+		if sampleStream != nil {
+			if err := sampleStream.Encode(s); err != nil {
+				t.Errorf("resource sample write: %v", err)
+			}
+		}
 		sampleMu.Unlock()
 	}
 	sample()
 	samplingDone, samplingStop := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(samplingDone)
-		ticker := time.NewTicker(200 * time.Millisecond)
+		interval := 200 * time.Millisecond
+		if longSoak {
+			interval = time.Second
+		}
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -295,8 +354,7 @@ func TestMilestoneBSustainedMemoryBudget(t *testing.T) {
 	}
 	phase.Store("mixed_upload_copy_preview")
 	mixedStarted := time.Now()
-	mixedDeadline := mixedStarted.Add(65 * time.Second)
-	var mixedUploads, fullDownloads, lastUploadNS, lastDownloadNS atomic.Int64
+	mixedDeadline := mixedStarted.Add(mixedDuration)
 	var readers sync.WaitGroup
 	errors := make(chan error, 8)
 	preview := func(duration time.Duration) {
@@ -335,7 +393,7 @@ func TestMilestoneBSustainedMemoryBudget(t *testing.T) {
 			}(lane)
 		}
 	}
-	preview(65 * time.Second)
+	preview(mixedDuration)
 	readers.Add(1)
 	go func() {
 		defer readers.Done()
@@ -366,7 +424,7 @@ func TestMilestoneBSustainedMemoryBudget(t *testing.T) {
 		uploaders.Add(1)
 		go func(lane int) {
 			defer uploaders.Done()
-			for i := 0; i < 100 && time.Now().Before(mixedDeadline); i++ {
+			for i := 0; (longSoak || i < 100) && time.Now().Before(mixedDeadline); i++ {
 				u, err := upload(fmt.Sprintf("concurrent-%d-%d.bin", lane, i), false)
 				if err != nil {
 					errors <- err
@@ -386,10 +444,14 @@ func TestMilestoneBSustainedMemoryBudget(t *testing.T) {
 		}(lane)
 	}
 	var jobs []copyJob
-	for iteration := range 2 {
-		if iteration == 1 {
+	copyCount, copyInterval := 2, 30*time.Second
+	if longSoak {
+		copyCount, copyInterval = 6, mixedDuration/6
+	}
+	for iteration := range copyCount {
+		if iteration > 0 {
 			select {
-			case <-time.After(time.Until(mixedStarted.Add(30 * time.Second))):
+			case <-time.After(time.Until(mixedStarted.Add(time.Duration(iteration) * copyInterval))):
 			case <-ctx.Done():
 				t.Fatal(ctx.Err())
 			}
@@ -414,6 +476,7 @@ func TestMilestoneBSustainedMemoryBudget(t *testing.T) {
 		}
 		jobs = append(jobs, job)
 		record("mixed_copy_completion", start)
+		t.Logf("mixed copy %d/%d complete at %.2fs; uploads=%d downloads=%d", iteration+1, copyCount, time.Since(mixedStarted).Seconds(), mixedUploads.Load(), fullDownloads.Load())
 	}
 	uploaders.Wait()
 	readers.Wait()
@@ -423,8 +486,9 @@ func TestMilestoneBSustainedMemoryBudget(t *testing.T) {
 	if t.Failed() {
 		return
 	}
-	if mixedUploads.Load() < 4 || fullDownloads.Load() < 4 || lastUploadNS.Load() < int64(60*time.Second) || lastDownloadNS.Load() < int64(60*time.Second) {
-		t.Fatalf("mixed workload did not sustain transfers for 60s: uploads=%d downloads=%d last_upload=%d last_download=%d", mixedUploads.Load(), fullDownloads.Load(), lastUploadNS.Load(), lastDownloadNS.Load())
+	minimumActive := mixedDuration - 5*time.Second
+	if mixedUploads.Load() < 4 || fullDownloads.Load() < 4 || lastUploadNS.Load() < int64(minimumActive) || lastDownloadNS.Load() < int64(minimumActive) {
+		t.Fatalf("mixed workload did not sustain transfers for %v: uploads=%d downloads=%d last_upload=%d last_download=%d", minimumActive, mixedUploads.Load(), fullDownloads.Load(), lastUploadNS.Load(), lastDownloadNS.Load())
 	}
 	stopWorkers()
 	phase.Store("restart_queued_upload")
@@ -447,6 +511,7 @@ func TestMilestoneBSustainedMemoryBudget(t *testing.T) {
 	}
 	phase.Store("final_integrity")
 	verified := append([]domain.Node{}, sources...)
+	verified = append(verified, domain.Node{ID: pending.ID})
 	for _, job := range jobs {
 		listing := decode[struct {
 			Items []domain.Node `json:"items"`
@@ -464,11 +529,15 @@ func TestMilestoneBSustainedMemoryBudget(t *testing.T) {
 		h := sha256.New()
 		n, readErr := io.Copy(h, r)
 		closeErr := r.Close()
-		if readErr != nil || closeErr != nil || n != size || fmt.Sprintf("%x", h.Sum(nil)) != manifest.SHA256 {
+		if readErr != nil || closeErr != nil || n != size || fmt.Sprintf("%x", h.Sum(nil)) != hash || manifest.SHA256 != hash {
 			t.Fatalf("full checksum: %d %v %v", n, readErr, closeErr)
 		}
 	}
 	stopWorkers()
+	integrity, err := storage.CheckIntegrity(ctx, f.db)
+	if err != nil || len(integrity.Issues) != 0 || integrity.Suppressed != 0 {
+		t.Fatalf("settled metadata integrity: %+v %v", integrity, err)
+	}
 	runtime.GC()
 	phase.Store("settled")
 	time.Sleep(time.Second)
@@ -476,7 +545,7 @@ func TestMilestoneBSustainedMemoryBudget(t *testing.T) {
 	sampleMu.Lock()
 	defer sampleMu.Unlock()
 	for _, s := range samples {
-		if s.Pending > 4 || s.CacheBytes > (256<<20)+4096 || s.DiskBytes > 4<<30 || s.OOMEvents != 0 || s.OOMKills != 0 {
+		if s.Pending > 4 || s.CacheBytes > (256<<20)+4096 || s.DiskBytes > 4<<30 || s.OOMEvents != 0 || s.OOMKills != 0 || s.PublishedIncomplete != 0 {
 			t.Fatalf("bounded queue/cache violated: %+v", s)
 		}
 	}
@@ -495,7 +564,9 @@ func TestMilestoneBSustainedMemoryBudget(t *testing.T) {
 		sort.Float64s(values)
 		percentiles[kind] = map[string]float64{"count": float64(len(values)), "p50_ms": values[(len(values)-1)*50/100], "p95_ms": values[(len(values)-1)*95/100], "max_ms": values[len(values)-1]}
 	}
-	report := map[string]any{"workload": "synthetic delayed local ciphertext, actual HTTP/copy/background workers; in-process streaming clients included", "mixed_minimum_seconds": 60, "mixed_configured_seconds": 65, "mixed_uploads": mixedUploads.Load(), "full_http_downloads": fullDownloads.Load(), "last_mixed_upload_seconds": float64(lastUploadNS.Load()) / 1e9, "last_mixed_download_seconds": float64(lastDownloadNS.Load()) / 1e9, "copy_jobs": len(jobs), "storage_chunk_bytes": size, "transport_part_bytes": storage.TransportPartSize, "elapsed_seconds": time.Since(started).Seconds(), "remote_gets": remote.gets.Load(), "remote_bytes": remote.bytes.Load(), "remote_puts": remote.puts.Load(), "peak_remote_writers": remote.peak.Load(), "latencies": percentiles, "samples": samples, "go_version": runtime.Version()}
+	report := map[string]any{"workload": "synthetic delayed local ciphertext, actual HTTP/copy/background workers; in-process streaming clients included", "mixed_minimum_seconds": minimumActive.Seconds(), "mixed_configured_seconds": mixedDuration.Seconds(), "mixed_uploads": mixedUploads.Load(), "full_http_downloads": fullDownloads.Load(), "last_mixed_upload_seconds": float64(lastUploadNS.Load()) / 1e9, "last_mixed_download_seconds": float64(lastDownloadNS.Load()) / 1e9, "copy_jobs": len(jobs), "storage_chunk_bytes": size, "transport_part_bytes": storage.TransportPartSize, "elapsed_seconds": time.Since(started).Seconds(), "remote_gets": remote.gets.Load(), "remote_bytes": remote.bytes.Load(), "remote_puts": remote.puts.Load(), "peak_remote_writers": remote.peak.Load(), "latencies": percentiles, "samples": samples, "go_version": runtime.Version()}
+	report["final_metadata_integrity"] = integrity
+	report["final_verified_fixture_files"] = len(verified)
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		t.Fatal(err)

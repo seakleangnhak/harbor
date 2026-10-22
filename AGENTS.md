@@ -12,6 +12,14 @@ Build a private single-owner drive. Keep changes small, inspect existing code, v
 
 ## Contracts and security
 
+### Milestone C final qualification ownership override
+
+- Preserve `48aae5f`, owner state and existing releases. No push, tag, publication or deployment upgrade. Keep established encryption/chunk format, queue bounds and concurrency. Agents never commit or access private configuration, authorization, keys, databases or live logs.
+- Soak agent owns `internal/api/milestone_b_memory_test.go`, new `scripts/milestone_c_soak*` and `docs/V1.3_SOAK_REPORT.md`; generated fixtures only, actual 30-minute interval before considering extension.
+- Resource agent owns new resource/failure-only tests/controllers and `docs/V1.3_RESOURCE_REPORT.md`; coordinate shared runtime and compilation resources before execution. No production source edits without coordinator agreement.
+- QA agent owns new qualification/browser controllers, isolated regression evidence and narrow mobile transfer overlap tests/fix after agreement. Live agent (second wave) owns new bounded-live controller/tests, using synthetic configuration for review only. Coordinator executes all real Telegram operations under source lock and removes copied authorization before unlocking.
+- Coordinator owns integration, compatibility/upgrade/rollback, images/version, remaining reports/runbooks and final review. All target execution retains existing isolated containers, nonroot/read-only/no-network synthetic runtime, explicit environment and bounded resources. Reviewed host Docker controllers are allowed; never mount private home, original state or Docker socket into target containers.
+
 ### Milestone B preview, memory and hygiene ownership override
 
 - Preserve Milestone A checkpoint `b6ae39e`, original runtime and all releases. Local reviewed commits only; no push, tags, publication or deployment. Keep 100 MiB storage chunks, 4 MiB client parts, two pending/upload, four globally and one saving worker. Coordinator alone handles serialized authorized live Telegram and private state.
