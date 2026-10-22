@@ -10,7 +10,7 @@ const { spawn } = require('node:child_process')
 
 const engine = process.argv[2] || 'chromium', requested = process.argv[3] || 'all'
 assert(['chromium', 'webkit'].includes(engine), 'Select chromium or webkit')
-const checks = { account: 'account_check.js', preview: 'preview_check.js', transport: 'transport_check.js', large: 'phase4_large_check.js' }
+const checks = { account: 'account_check.js', preview: 'preview_check.js', transport: 'transport_check.js', large: 'phase4_large_check.js', 'milestone-b': 'milestone_b_preview_check.js', 'large-b': 'phase4_large_check.js' }
 assert(requested === 'all' || Object.hasOwn(checks, requested), 'Select all, account, preview, transport or large')
 assert(process.platform === 'linux' && fs.existsSync('/.dockerenv'), 'Disposable Docker sandbox required')
 assert(process.getuid() !== 0, 'Browser fixture must run without root')
@@ -105,7 +105,7 @@ async function runSuite(name) {
     }
     const check = vm.runInNewContext(fs.readFileSync(path.join('/checks', checks[name]), 'utf8'), { require, URL, Buffer, TextEncoder, TextDecoder, setTimeout, clearTimeout, console }, { filename: checks[name] })
     const restart = async () => { await stopServer(); startServer(serverEnv, logFile); await waitFor('/ready') }
-    const result = await check(page, restart)
+    const result = await check(page, restart, name === 'large-b' ? 10000 : 1000)
     assert(result?.result === 'PASS', `${name} did not return PASS`)
     if (name === 'account') assert(result.axe?.result === 'PASS' && result.axe.checks >= 32 && result.screenshots.length >= 32, 'Account accessibility/layout coverage missing')
     if (name === 'preview' || name === 'transport') assert(result.axe_checks > 0, `${name} accessibility checks missing`)
@@ -144,7 +144,7 @@ let deadline
 Promise.race([
   (async () => {
     browser = await (engine === 'webkit' ? webkit : chromium).launch({ headless: true, env: browserEnv, args: engine === 'chromium' ? ['--no-sandbox', '--disable-dev-shm-usage'] : [] })
-    for (const name of requested === 'all' ? Object.keys(checks) : [requested]) {
+    for (const name of requested === 'all' ? ['account', 'preview', 'transport', 'large'] : [requested]) {
       try { await runSuite(name) } catch {
         failures.push({ suite: name, result: 'FAIL' })
         console.error(JSON.stringify({ result: 'FAIL', suite: name, browser: engine, message: 'Suite failed; inspect its error.txt' }))
