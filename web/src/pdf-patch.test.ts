@@ -6,9 +6,11 @@ import { spawnSync } from 'node:child_process'
 import test, { type TestContext } from 'node:test'
 
 const original = '  cancel(reason) {\n    this._reader?.cancel(reason);\n    this._abortController.abort();\n  }'
-const patched = original.replace('this._reader?.cancel(reason);', 'this._reader?.cancel(reason).catch(() => {});')
+const patched = ['_headersCapability', '_readCapability'].map(capability =>
+  original.replace('this._reader?.cancel(reason);', 'this._reader?.cancel(reason).catch(() => {});')
+    .replace('this._abortController.abort();', `this.${capability}.promise.catch(() => {});\n    this._abortController.abort();`))
 const installed = readFileSync(new URL('../node_modules/pdfjs-dist/legacy/build/pdf.mjs', import.meta.url), 'utf8')
-const pristine = installed.replaceAll(patched, original)
+const pristine = patched.reduce((source, method) => source.replaceAll(method, original), installed)
 assert.equal(pristine.split(original).length - 1, 2)
 
 function fixture(t: TestContext, source = pristine, version = '6.4.299') {
@@ -35,8 +37,8 @@ test('PDF.js installer patches both installed readers and repeated installation 
   assert.equal(first.status, 0, first.stderr)
   const result = readFileSync(check.bundle, 'utf8')
   assert.equal(result.split(original).length - 1, 0)
-  assert.equal(result.split(patched).length - 1, 2)
-  assert.ok(result.replaceAll(patched, original).endsWith(pristine), 'Unrelated dependency source must remain unchanged')
+  for (const method of patched) assert.equal(result.split(method).length - 1, 1)
+  assert.ok(patched.reduce((source, method) => source.replaceAll(method, original), result).endsWith(pristine), 'Unrelated dependency source must remain unchanged')
   const second = check.run()
   assert.equal(second.status, 0, second.stderr)
   assert.equal(readFileSync(check.bundle, 'utf8'), result)
@@ -51,7 +53,7 @@ test('PDF.js installer refuses an unsupported version without changing its sourc
 })
 
 test('PDF.js installer refuses a partially patched dependency without changing its source', t => {
-  const partial = pristine.replace(original, patched)
+  const partial = pristine.replace(original, patched[0])
   const check = fixture(t, partial)
   const result = check.run()
   assert.notEqual(result.status, 0)
