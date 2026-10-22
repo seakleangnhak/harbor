@@ -37,7 +37,7 @@ remote objects. Unpublished recovery staging outside the data directory stays
 an explicit operator investigation. The last successful content-integrity
 timestamp remains unknown because current storage does not persist it.
 
-Scope: single-owner personal use on a trusted local host. This runbook does not establish public internet readiness, independent security audit, guaranteed Telegram durability, or live cross-datacenter coverage. Current qualification belongs in the [v1.0 release report](PHASE6_FINAL_REPORT.md), [release checklist](RELEASE_CHECKLIST.md) and [known limitations](KNOWN_LIMITATIONS.md). [Recovery quickstart](RECOVERY_QUICKSTART.md) gives clean-environment/off-host steps; Phase 5 reports remain historical evidence.
+Scope: single-owner personal use on a trusted local host. This runbook does not establish public internet readiness, independent security audit, guaranteed Telegram durability, or live cross-datacenter coverage. Current local qualification belongs in the [v1.3 final gate](V1.3_RELEASE_FINAL_GATE.md), [release checklist](RELEASE_CHECKLIST.md) and [known limitations](KNOWN_LIMITATIONS.md). The [v1.0 release report](PHASE6_FINAL_REPORT.md) remains historical. [Recovery quickstart](RECOVERY_QUICKSTART.md) gives clean-environment/off-host steps; Phase 5 reports remain historical evidence.
 
 ## Protected installation
 
@@ -130,7 +130,7 @@ Use an isolated directory and port. Restore never overwrites an existing install
 
 Restore authenticates every member, checks required materials/binding/SQLite, validates referenced local blobs, and publishes the directory atomically without replacement. Wrong passwords, corruption, incomplete archives, and missing keys fail without publishing a destination. Graceful cancellation removes staging. SIGKILL or power loss can leave private `.harbor-restore-*` staging directories: confirm no recovery process is active before removing only that abandoned staging directory, then retry into a new destination. Never start Harbor from incomplete staging.
 
-Restored `recovery.env` uses internal canonical paths, `127.0.0.1:8080`, and local HTTP cookie settings. Reapply documented HTTPS/proxy policy before any deliberate remote exposure. A structurally valid saved Telegram session can still be expired or revoked; use the supported local `telegram-setup-qr` Terminal flow when reauthorization is necessary. Never send QR images, codes, or passwords through the browser/chat.
+Restored `recovery.env` uses internal canonical paths, `127.0.0.1:8080`, and local HTTP cookie settings. Reapply documented HTTPS/proxy policy before any deliberate remote exposure. A structurally valid saved Telegram session can still be expired or revoked; use the supported local `telegram-setup-qr` Terminal flow when reauthorization is necessary. Guarded first-run browser setup is a separate supported local/HTTPS flow. Never share QR images, codes or passwords in chat or enter them on untrusted pages.
 
 ## Integrity and copy recovery
 

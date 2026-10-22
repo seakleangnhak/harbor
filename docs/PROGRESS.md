@@ -1,6 +1,6 @@
 # Progress
 
-## Milestone C — final qualification in progress
+## Milestone C — local v1.3.0 release readiness PASS
 
 Two independent 30-minute mixed-transfer intervals pass at 768/1024 MiB, with
 checksums, queue drain and zero OOM events; cgroup page-cache pressure remains
@@ -15,9 +15,17 @@ metadata. Earlier host-full/Desktop interruptions remain documented; original
 Harbor is healthy after authorized recovery and owner cleanup recovered about
 29 GiB. Source defaults are locally prepared as 1.3.0; published v1.2.1 and
 Compose pull default remain unchanged.
-Overall release remains PARTIAL until exact stable images, final live archive-only
-restore and final source checks pass. No tag, push, publication or deployment
-upgrade occurred.
+Exact prepared ARM64/native and AMD64/emulated image smokes, repeated identical
+multiarch OCI exports and the prepared image's five-stage local upgrade/rollback
+cycle pass. Exact prepared 1.3.0 live repeat passes 900.011 seconds/five paced
+cycles: multipart/full SHA/ranges, three concurrent uploads, storing-state
+SIGKILL recovery, restart/recreation, encrypted archive-only candidate restore
+and fresh v1.2.1 rollback. Both restored starts exclude source volume. Original
+authorization is unchanged; copies removed and source lock released. Final
+documentation-only packaging maps back to the same qualified runtime; final
+source/policy/scanner receipts remain in ignored qualification output.
+**HARBOR_V1.3_RELEASE_READY = PASS** within documented local/private scope.
+No tag, push, publication or deployment upgrade occurred.
 See [final gate](V1.3_RELEASE_FINAL_GATE.md) and its four qualification reports.
 
 ## Milestone B — PASS, local 1.3.0-rc.1 only

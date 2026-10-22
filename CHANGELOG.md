@@ -10,7 +10,7 @@
 - Expanded sustained mixed-load, real PDF/video, large-directory, preview-crash and full-staging-disk regression fixtures. Qualification and candidate decision: [Milestone B](docs/MILESTONE_B_FINAL_REPORT.md).
 - Fix PDF fetch-reader cancellation rejections, including cancellation before response headers; retain consumer rejection and pin/guard the narrowly scoped dependency patch.
 - Keep mobile navigation and its scrim above the transfer panel, with both-engine pointer/focus/theme/accessibility regressions.
-- Add extended transfer/resource soaks, live upgrade/recovery and fresh-volume rollback qualification. Final stable readiness remains separate in the [Milestone C gate](docs/V1.3_RELEASE_FINAL_GATE.md).
+- Add two independent 30-minute transfer/resource soaks, a separate 30-minute browser media interval, and exact-image live upgrade/recovery/fresh-volume rollback qualification. Both architectures build and run; repeated local OCI exports are byte-identical. [Milestone C readiness](docs/V1.3_RELEASE_FINAL_GATE.md) passes within documented private-use limits; publication and deployment remain separately approved actions.
 
 ## 1.2.1 — 2026-10-22
 
