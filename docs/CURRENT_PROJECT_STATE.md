@@ -1,6 +1,6 @@
 # Harbor — current project state and development handoff
 
-> Audit snapshot before Milestones A and B. Transfer/preview fixes, offline storage maintenance, current candidate identity and newer verification supersede the corresponding gaps below; see [transfer engine final report](TRANSFER_ENGINE_FINAL_REPORT.md), [Milestone B](MILESTONE_B_FINAL_REPORT.md) and [v1.3 candidate](V1.3_RELEASE_CANDIDATE.md). Historical release/publication facts retain their recorded scope.
+> Audit snapshot before Milestones A, B and C. Transfer/preview fixes, offline storage maintenance, current candidate identity and newer verification supersede the corresponding gaps below; see [transfer engine final report](TRANSFER_ENGINE_FINAL_REPORT.md), [Milestone B](MILESTONE_B_FINAL_REPORT.md), [v1.3 candidate](V1.3_RELEASE_CANDIDATE.md) and [final qualification gate](V1.3_RELEASE_FINAL_GATE.md). Historical release/publication facts retain their recorded scope.
 
 Audit date: 2026-10-22, Asia/Phnom_Penh. Source, Git, read-only GitHub/GHCR inspection and fresh isolated synthetic checks establish this report. Historical qualification is explicitly separate. No push, tag, publication, remote deployment, private-state inspection or live Telegram write was performed.
 

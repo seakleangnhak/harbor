@@ -1,5 +1,21 @@
 # Progress
 
+## Milestone C — final qualification in progress
+
+Two independent 30-minute mixed-transfer intervals pass at 768/1024 MiB, with
+checksums, queue drain and zero OOM events; cgroup page-cache pressure remains
+explicit. Full default/tagged/race/vet checks, 54 frontend tests, 14 browser
+suites/139 axe checks, RC live Telegram, encrypted recovery and isolated
+v1.2.1 upgrade/rollback pass within their recorded scope. Mobile navigation
+stacking and two reproduced PDF cancellation rejection paths are fixed.
+
+Overall release remains PARTIAL: final-patch 30-minute browser media, final
+source/image identity and archive-only live restore proof remain pending.
+Docker Desktop stopped during host-disk exhaustion; incomplete media evidence
+is retained, and qualification is moving to the dedicated isolated VM.
+No version promotion, tag, push, publication or deployment upgrade occurred.
+See [final gate](V1.3_RELEASE_FINAL_GATE.md) and its four qualification reports.
+
 ## Milestone B — PASS, local 1.3.0-rc.1 only
 
 Starting checkpoint `b6ae39e` preserved. Reader boundary replay avoids a duplicate

@@ -1,4 +1,4 @@
-// Opt-in 30-minute local-media workload. This does not measure cold Telegram media.
+// Opt-in 30-minute Chromium local-media workload. This does not measure cold Telegram media.
 async (page, restartServer) => {
   const fs = require('node:fs'), vm = require('node:vm'), crypto = require('node:crypto'), process = require('node:process')
   const { setInterval, clearInterval } = require('node:timers')
@@ -25,7 +25,15 @@ async (page, restartServer) => {
     await page.locator('.pdf-canvas-scroll .sr-only').filter({ hasText: `Harbor generated PDF page ${number}` }).waitFor()
   }
   const data = Buffer.alloc(16 * 1024 * 1024, 91), digest = crypto.createHash('sha256').update(data).digest('hex')
-  const samples = [], cycles = [], errors = [], failedRanges = []
+  const samples = [], cycles = [], errors = [], failedRanges = [], automationSamples = []
+  const diagnostic = await page.context().newCDPSession(page)
+  const sampleAutomation = async () => {
+    // Pinned tooling internals: retained payload totals describe automation, not application RSS.
+    const objects = [...page._connection._objects.values()]
+    const requests = objects.filter(object => object._type === 'Request')
+    const heap = await diagnostic.send('Runtime.getHeapUsage'), dom = await diagnostic.send('Memory.getDOMCounters')
+    automationSamples.push({ seconds: (Date.now() - began) / 1000, request_objects: requests.length, retained_request_body_bytes: requests.reduce((sum, request) => sum + (request._initializer.postData?.length || 0), 0), channel_objects: objects.length, response_listeners: page.listenerCount('response'), requestfailed_listeners: page.listenerCount('requestfailed'), browser_heap: heap, browser_dom: dom })
+  }
   const counters = path => Object.fromEntries(fs.readFileSync(path, 'utf8').trim().split('\n').map(line => { const [name, value] = line.trim().split(/\s+/); return [name, Number(value)] }))
   const diskBytes = directory => fs.readdirSync(directory, { withFileTypes: true }).reduce((sum, entry) => {
     const path = `${directory}/${entry.name}`
@@ -43,7 +51,7 @@ async (page, restartServer) => {
       samples.push({ seconds: (Date.now() - began) / 1000, app_rss_bytes: Number(status.match(/^VmRSS:\s+(\d+)/m)?.[1] || 0) * 1024, app_hwm_bytes: Number(status.match(/^VmHWM:\s+(\d+)/m)?.[1] || 0) * 1024, cgroup_bytes: Number(fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf8')), cgroup_peak_bytes: Number(fs.readFileSync('/sys/fs/cgroup/memory.peak', 'utf8')), anon_bytes: stat.anon, file_cache_bytes: stat.file, cpu_usage_usec: counters('/sys/fs/cgroup/cpu.stat').usage_usec, node: process.memoryUsage(), scratch_bytes: diskBytes('/scratch') })
     } catch (error) { errors.push(`Resource sampler: ${error.code || error.message}`) }
   }
-  const exception = error => errors.push(error.message)
+  const exception = error => errors.push(error.stack || error.message)
   const response = response => { if (/\/nodes\/[^/]+\/content$/.test(new URL(response.url()).pathname) && response.status() === 206) range206++ }
   const failed = request => { if (/\/nodes\/[^/]+\/content$/.test(new URL(request.url()).pathname)) failedRanges.push(request.failure()?.errorText || 'unknown') }
   page.on('pageerror', exception); page.on('response', response); page.on('requestfailed', failed)
@@ -59,7 +67,9 @@ async (page, restartServer) => {
       await page.route('**/api/v1/uploads/*/chunks/*/parts/*', part)
       const name = `Media soak ${cycles.length}.bin`
       try {
-        await page.getByLabel('Choose files to upload', { exact: true }).setInputFiles({ name, mimeType: 'application/octet-stream', buffer: data })
+        // Keep selected bytes on disk; repeated base64 fixture injection inflates automation memory.
+        fs.writeFileSync(name, data, { mode: 0o600 })
+        await page.getByLabel('Choose files to upload', { exact: true }).setInputFiles(name)
         let deadline
         try { await Promise.race([reached, new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('Media upload part not observed')), 30000) })]) } finally { clearTimeout(deadline) }
         const previewStart = Date.now()
@@ -92,19 +102,22 @@ async (page, restartServer) => {
         try { assert(removed.status() === 204, 'Generated media upload recycling failed') } finally { await removed.dispose() }
       }
       await button('Clear history').click(); await button('Close transfer queue').click()
+      fs.unlinkSync(name)
       assert((await listing(folder.id)).length === nodes.length, 'Generated media fixture count grew')
       if (!restarted && Date.now() - began >= duration / 2) {
         await restartServer(); await page.reload(); await page.getByRole('heading', { name: 'My drive', exact: true }).waitFor(); await button(folder.name).click(); restarted = true
       }
       cycle.active_ms = Date.now() - start; cycles.push(cycle)
+      await sampleAutomation()
+      fs.writeFileSync('suite-checks.json', JSON.stringify({ result: 'RUNNING', duration_seconds: (Date.now() - began) / 1000, cycles, samples, automation_samples: automationSamples }))
       assert(!errors.length, `Media soak exception: ${errors.join('; ')}`)
-      await wait(Math.max(0, Math.min(30000 - cycle.active_ms, duration - (Date.now() - began))))
+      await wait(Math.max(0, Math.min(60000 - cycle.active_ms, duration - (Date.now() - began))))
     }
     sample()
     assert(cycles.length >= 30 && restarted && range206 > 0 && samples.length >= 1500 && samples.some(sample => sample.app_rss_bytes > 0), 'Media duration/resource/range coverage incomplete')
     assert(!errors.length, `Media soak exception: ${errors.join('; ')}`)
     const events = counters('/sys/fs/cgroup/memory.events')
     assert(events.oom === 0 && events.oom_kill === 0, 'Media workload encountered cgroup OOM')
-    return { result: 'PASS', duration_seconds: (Date.now() - began) / 1000, timing_scope: 'Local warmed media; same Chromium context, one server restart; 30-second cycle cadence, active duty recorded; not live Telegram media', initial_media: initial, cycles, samples, cgroup_memory_events: events, range206, canceled_content_requests: failedRanges, browser_exceptions: errors, fixture_files_remaining: nodes.length, uploaded_bytes: cycles.length * data.length, verified_download_bytes: cycles.length * data.length, screenshots: initial.screenshots, axe_checks: initial.axe_checks }
-  } finally { stopped = true; clearInterval(timer); page.off('pageerror', exception); page.off('response', response); page.off('requestfailed', failed) }
+    return { result: 'PASS', duration_seconds: (Date.now() - began) / 1000, timing_scope: 'Local warmed media; same Chromium context, one server restart; 60-second cycle cadence, active duty recorded; not live Telegram media', initial_media: initial, cycles, samples, automation_samples: automationSamples, automation_scope: 'Read-only installed Playwright request-body/channel counts and CDP heap/DOM; no forced collection or context replacement', cgroup_memory_events: events, range206, canceled_content_requests: failedRanges, browser_exceptions: errors, fixture_files_remaining: nodes.length, uploaded_bytes: cycles.length * data.length, verified_download_bytes: cycles.length * data.length, screenshots: initial.screenshots, axe_checks: initial.axe_checks }
+  } finally { stopped = true; clearInterval(timer); page.off('pageerror', exception); page.off('response', response); page.off('requestfailed', failed); await diagnostic.detach().catch(() => {}) }
 }

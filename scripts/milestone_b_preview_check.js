@@ -8,12 +8,13 @@ async (page, restartServer) => {
   if (!diagnostics.ok() || (await diagnostics.json()).adapter !== 'local') throw new Error('Disposable local adapter required')
   const assert = (value, message) => { if (!value) throw new Error(message) }
   const button = name => page.getByRole('button', { name, exact: true })
-  const samples = {}, screenshots = [], errors = [], ranges = [], requestFailures = []
+  const samples = {}, screenshots = [], errors = [], ranges = [], requestFailures = [], actions = []
+  const mark = action => actions.push({ milliseconds: Date.now(), action })
   let axeChecks = 0
   const hash = bytes => crypto.createHash('sha256').update(bytes).digest('hex')
-  const measure = async (name, action) => { const start = Date.now(); await action(); (samples[name] ||= []).push(Date.now() - start) }
+  const measure = async (name, action) => { mark(name); const start = Date.now(); await action(); (samples[name] ||= []).push(Date.now() - start) }
   const watch = response => { if (/\/nodes\/[^/]+\/content$/.test(new URL(response.url()).pathname)) ranges.push({ id: new URL(response.url()).pathname.split('/')[4], status: response.status(), range: response.headers()['content-range'] || null }) }
-  const onError = error => errors.push(error.message)
+  const onError = error => { errors.push({ stack: error.stack || error.message, recent_actions: actions.slice(-12) }); fs.writeFileSync('suite-checks.json', JSON.stringify({ result: 'FAIL', browser_errors: errors })) }
   const onFailed = request => { if (/\/nodes\/[^/]+\/content$/.test(new URL(request.url()).pathname)) requestFailures.push({ id: new URL(request.url()).pathname.split('/')[4], error: request.failure()?.errorText || 'unknown' }) }
   const folderResponse = await page.request.post(`${origin}/api/v1/folders`, { data: { name: 'Milestone B previews', parent_id: '' } })
   assert(folderResponse.status() === 201, 'Preview folder creation failed')
@@ -66,8 +67,8 @@ async (page, restartServer) => {
   await page.reload(); await button(folder.name).click(); await page.getByRole('heading', { name: folder.name, exact: true }).waitFor()
   await button('List view').click()
   page.on('response', watch); page.on('pageerror', onError); page.on('requestfailed', onFailed)
-  const close = async () => { await button('Close dialog').click(); await page.getByRole('dialog').waitFor({ state: 'hidden' }) }
-  const open = async node => { await button(node.name).click(); await page.getByRole('dialog', { name: node.name, exact: true }).waitFor() }
+  const close = async () => { mark('Close preview'); await button('Close dialog').click(); await page.getByRole('dialog').waitFor({ state: 'hidden' }) }
+  const open = async node => { mark(`Open ${node.name}`); await button(node.name).click(); await page.getByRole('dialog', { name: node.name, exact: true }).waitFor() }
   const imageReady = async () => { await page.waitForFunction(() => { const image = document.querySelector('img.image-canvas'); return image?.complete && image.naturalWidth > 0 && getComputedStyle(image).visibility !== 'hidden' }) }
   const pdfReady = async pageNumber => {
     await page.locator('.pdf-canvas-scroll[aria-busy="false"]').waitFor()
@@ -154,7 +155,7 @@ async (page, restartServer) => {
     await open(pdf); await pdfReady(1); await button('Next PDF page').click(); await pdfReady(2); await shot('pdf-mobile-light'); await close()
     await restartServer(); await page.reload(); await page.getByRole('heading', { name: 'My drive', exact: true }).waitFor(); await button(folder.name).click()
     await open(pdf); await pdfReady(1); await close()
-    assert(!errors.length, `Uncaught browser errors: ${errors.join('; ')}`)
+    assert(!errors.length, `Uncaught browser errors: ${JSON.stringify(errors)}`)
     const percentiles = Object.fromEntries(Object.entries(samples).map(([name, values]) => { const sorted = [...values].sort((a, b) => a - b); return [name, { samples_ms: values, p50_ms: sorted[Math.ceil(sorted.length * .5) - 1], p95_ms: sorted[Math.ceil(sorted.length * .95) - 1], count: values.length }] }))
     return { result: 'PASS', adapter: 'local', timing_scope: 'UI first/repeat open after verified upload; OS cache may be warm; not cold Telegram', previews: { png: 'PASS', jpeg_pixels: 4096 * 3072, pdf_pages: 4, pdf_navigation: 'PASS', repeated_pdf_cycles: 5, rapid_navigation_cycles: 4, text_cancellation: 'PASS', mixed_upload_preview_sha256: 'PASS', restart_preview: 'PASS' }, video: videoResults, latency: percentiles, content_responses: ranges.length, range206: ranges.filter(item => item.status === 206).length, failed_or_cancelled_content_requests: requestFailures, browser_exceptions: errors.length, screenshots, axe_checks: axeChecks }
   } finally { page.off('response', watch); page.off('pageerror', onError); page.off('requestfailed', onFailed) }
