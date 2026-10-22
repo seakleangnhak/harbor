@@ -96,8 +96,13 @@ func TestTransportEncryptedArchiveRestoreAndOriginalFileResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	put(engine, pending, 1, 0, payload[chunkSize:chunkSize+storage.TransportPartSize])
+	put(engine, pending, 1, 1, payload[chunkSize+storage.TransportPartSize:])
+	queued, err := engine.QueueChunk(ctx, pending.ID, 1)
+	if err != nil || len(queued.PendingChunks) != 1 || queued.PendingChunks[0].State != "queued" || queued.PendingChunks[0].Bytes != chunkSize {
+		t.Fatalf("durable queue before backup: %+v %v", queued, err)
+	}
 	var stagedRef string
-	if err := db.QueryRow(`SELECT ref FROM storage_parts WHERE upload_id=?`, pending.ID).Scan(&stagedRef); err != nil {
+	if err := db.QueryRow(`SELECT ref FROM storage_parts WHERE upload_id=? AND chunk_idx=1 AND part_idx=0`, pending.ID).Scan(&stagedRef); err != nil {
 		t.Fatal(err)
 	}
 	archive := filepath.Join(root, "transport.harbor")
@@ -155,7 +160,7 @@ func TestTransportEncryptedArchiveRestoreAndOriginalFileResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, err := engine.Status(ctx, pending.ID)
-	if err != nil || state.ReceivedBytes != chunkSize || state.StagedBytes != 0 || len(state.StagedParts) != 0 || state.StagedChunk == nil || *state.StagedChunk != 1 {
+	if err != nil || state.Status != "uploading" || state.ReceivedBytes != chunkSize || len(state.ReceivedChunks) != 1 || state.ReceivedChunks[0] != 0 || state.StagedBytes != 0 || len(state.StagedParts) != 0 || state.StagedChunk == nil || *state.StagedChunk != 1 || len(state.PendingChunks) != 1 || state.PendingChunks[0].State != "failed" || state.PendingChunks[0].ErrorCode != "integrity_failed" || state.PendingChunks[0].Bytes != 0 || len(state.PendingChunks[0].Parts) != 0 {
 		t.Fatalf("restored transport acknowledgements: %+v %v", state, err)
 	}
 	var favorite int

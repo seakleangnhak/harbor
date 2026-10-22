@@ -53,15 +53,19 @@ def run(binary):
         try:
             drive.start()
             drive.request('POST', '/auth/login', {'password': password})
+            diagnostics, _ = drive.request('GET', '/diagnostics')
+            assert diagnostics['adapter'] == 'local', 'Copy crash qualification requires local fixtures'
+            size = max(SIZE, 2 * diagnostics['chunk_size'] + 17)
             folder, _ = drive.request('POST', '/folders', {'name': 'Phase 5 original', 'parent_id': ''}, expect=201)
             nested, _ = drive.request('POST', '/folders', {'name': 'Nested', 'parent_id': folder['id']}, expect=201)
-            digest = fixture_hash()
-            upload, _ = drive.request('POST', '/uploads', {'name': 'generated.bin', 'parent_id': nested['id'], 'size': SIZE,
+            digest = fixture_hash(size)
+            upload, _ = drive.request('POST', '/uploads', {'name': 'generated.bin', 'parent_id': nested['id'], 'size': size,
                                                          'mime_type': 'application/octet-stream', 'sha256': digest}, expect=201)
+            assert upload['total_chunks'] >= 3, 'Copy crash fixture must span multiple acknowledged chunks'
             for index in range(upload['total_chunks']):
                 offset = index * upload['chunk_size']
                 drive.request('PUT', '/uploads/' + upload['id'] + '/chunks/' + str(index),
-                              fixture_chunk(offset, min(upload['chunk_size'], SIZE - offset)))
+                              fixture_chunk(offset, min(upload['chunk_size'], size - offset)))
             node, _ = drive.request('POST', '/uploads/' + upload['id'] + '/complete', {})
             operation = uuid.uuid4().hex
             spec = {'operation_id': operation, 'source_ids': [folder['id'], nested['id']], 'parent_id': ''}
@@ -73,7 +77,7 @@ def run(binary):
             with sqlite3.connect(data / 'drive.db', timeout=1) as db:
                 while time.monotonic() < deadline:
                     state = db.execute('SELECT coalesce(sum(copied_bytes),0) FROM copy_entries WHERE job_id=?', (operation,)).fetchone()[0]
-                    if 0 < state < SIZE:
+                    if 0 < state < size:
                         drive.process.kill()
                         drive.process.wait(timeout=10)
                         interrupted = state
@@ -86,14 +90,14 @@ def run(binary):
                 assert committed > 0
             drive.start()
             completed = await_job(drive, operation, 'complete')
-            assert completed['completed_bytes'] == SIZE and completed['completed_entries'] == 3
+            assert completed['completed_bytes'] == size and completed['completed_entries'] == 3
             root, _ = drive.request('GET', '/nodes?parent_id=' + completed['result_ids'][0])
             assert [entry['name'] for entry in root['items']] == ['Nested']
             copied, _ = drive.request('GET', '/nodes?parent_id=' + root['items'][0]['id'])
             copied_node = copied['items'][0]
             assert copied_node['sha256'] == digest
             downloaded, headers = drive.request('GET', '/nodes/' + copied_node['id'] + '/content', raw=True)
-            assert len(downloaded) == SIZE and hashlib.sha256(downloaded).hexdigest() == digest
+            assert len(downloaded) == size and hashlib.sha256(downloaded).hexdigest() == digest
             assert headers['X-Content-SHA256'] == digest
             original, _ = drive.request('GET', '/nodes/' + node['id'])
             assert original['sha256'] == digest
@@ -109,7 +113,7 @@ def run(binary):
                 assert chunk_count == upload['total_chunks']
             return {'status': 'PASS', 'adapter': 'local', 'process_sigkill': True, 'restart_resume': True,
                     'bytes_before_sigkill': interrupted, 'chunks_before_sigkill': committed,
-                    'file_bytes': SIZE, 'sha256_equal': True, 'atomic_visibility': True, 'ancestor_selection_pruned': True,
+                    'file_bytes': size, 'chunk_size': upload['chunk_size'], 'sha256_equal': True, 'atomic_visibility': True, 'ancestor_selection_pruned': True,
                     'cancellation_cleanup': True, 'original_retained': True, 'copied_chunks': chunk_count}
         finally:
             drive.stop()

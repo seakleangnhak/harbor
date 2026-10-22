@@ -20,6 +20,14 @@ export type View = 'all' | 'recent' | 'favorites' | 'trash'
 export type FileKind = '' | 'folder' | 'image' | 'video' | 'audio' | 'document' | 'archive' | 'other'
 export type Sort = 'name' | 'updated_at' | 'size'
 export type Listing = { parent_id: string; view: View; q: string; sort: Sort; direction: 'asc' | 'desc'; type: FileKind }
+export type PendingUploadChunk = {
+  index: number
+  parts: number[]
+  bytes: number
+  state: 'receiving' | 'queued' | 'storing' | 'failed'
+  error_code?: string
+}
+
 export type Upload = {
   id: string
   name: string
@@ -35,6 +43,8 @@ export type Upload = {
   staged_chunk?: number
   staged_parts?: number[]
   staged_bytes?: number
+  pending_chunks?: PendingUploadChunk[]
+  max_pending_chunks?: number
   status: 'uploading' | 'complete'
   created_at: string
 }

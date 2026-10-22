@@ -164,7 +164,9 @@ func (s *Server) commitChunk(w http.ResponseWriter, r *http.Request) {
 		respondError(w, domain.ErrInvalid)
 		return
 	}
-	var body struct{}
+	var body struct {
+		Background bool `json:"background"`
+	}
 	if err = readJSON(w, r, &body); err != nil {
 		respondError(w, err)
 		return
@@ -174,12 +176,18 @@ func (s *Server) commitChunk(w http.ResponseWriter, r *http.Request) {
 		respondError(w, err)
 		return
 	}
-	u, err = s.cfg.Storage.CommitChunk(r.Context(), u.ID, index)
+	status := http.StatusOK
+	if body.Background {
+		u, err = s.cfg.Storage.QueueChunk(r.Context(), u.ID, index)
+		status = http.StatusAccepted
+	} else {
+		u, err = s.cfg.Storage.CommitChunk(r.Context(), u.ID, index)
+	}
 	if err != nil {
 		respondError(w, err)
 		return
 	}
-	writeJSON(w, 200, u)
+	writeJSON(w, status, u)
 }
 
 func (s *Server) completeUpload(w http.ResponseWriter, r *http.Request) {
@@ -189,8 +197,6 @@ func (s *Server) completeUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	s.mutate.Lock()
-	defer s.mutate.Unlock()
 	if n, err := nodeFrom(r.Context(), s.cfg.DB, id); err == nil {
 		writeJSON(w, 200, n)
 		return
@@ -198,16 +204,8 @@ func (s *Server) completeUpload(w http.ResponseWriter, r *http.Request) {
 		respondError(w, err)
 		return
 	}
-	u, err := s.userUpload(r)
+	_, err := s.userUpload(r)
 	if err != nil {
-		respondError(w, err)
-		return
-	}
-	if err = validParent(r.Context(), s.cfg.DB, u.ParentID); err != nil {
-		respondError(w, err)
-		return
-	}
-	if err = siblingAvailable(r.Context(), s.cfg.DB, u.ParentID, u.Name, id); err != nil {
 		respondError(w, err)
 		return
 	}
@@ -218,6 +216,33 @@ func (s *Server) completeUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if m.ID != id {
 		respondError(w, errors.New("manifest identity mismatch"))
+		return
+	}
+	// Remote verification can take minutes; serialize only metadata publication.
+	s.mutate.Lock()
+	defer s.mutate.Unlock()
+	if n, err := nodeFrom(r.Context(), s.cfg.DB, id); err == nil {
+		writeJSON(w, 200, n)
+		return
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		respondError(w, err)
+		return
+	}
+	current, err := s.cfg.Storage.Status(r.Context(), id)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	if current.Status != "complete" || current.Size != m.Size || current.SHA256 != m.SHA256 || current.Name != m.Name || current.ParentID != m.ParentID {
+		respondError(w, domain.ErrIntegrity)
+		return
+	}
+	if err = validParent(r.Context(), s.cfg.DB, m.ParentID); err != nil {
+		respondError(w, err)
+		return
+	}
+	if err = siblingAvailable(r.Context(), s.cfg.DB, m.ParentID, m.Name, id); err != nil {
+		respondError(w, err)
 		return
 	}
 	now := time.Now().UTC()

@@ -1,5 +1,11 @@
 # Progress
 
+## Background saving and read reuse — PARTIAL
+
+Current scope: overlap browser parts with durable backend saves while keeping 100 MiB Telegram chunks, 4 MiB client parts, encrypted staging and remote readback verification. Separate storage, frontend and reader-cache agents own disjoint files; coordinator owns contracts/API/startup/tests/docs. Source adds a two-chunk per-upload/four-chunk global staging window and a single joined saving worker; a sender/monitor handoff also lets the next small file start while prior storage work finishes. Cache only encrypted reader chunks in bounded private storage, authenticating every read. Final verification no longer holds the global metadata-mutation lock; publication repeats conflict/storage checks.
+
+Fresh isolated audit execution now passes focused/full default Go tests and race, 48 frontend tests/typecheck/build, eight Chromium/WebKit suites with 112 screenshots/108 scoped axe checkpoints, exact ARM64 image smoke, encrypted fresh restore and folder-copy SIGKILL recovery. Audit reproduced and fixed a cold-cache mutex deadlock and repaired a stale copy-crash fixture for 100 MiB geometry. Production-flag Telegram-tagged tests and both vet variants pass; fresh tagged race remains NOT TESTED after three compiler memory failures. Synthetic cache reads reduce remote Gets 4 → 1 with no demonstrated allocation reduction or live speed claim. Full results and failed-attempt explanations are recorded in the [current-state handoff](CURRENT_PROJECT_STATE.md). New upload-worker mid-save process termination, mixed resource loads and current live Telegram remain NOT TESTED. Existing private runtime, original repository/history and releases remain untouched; no commit, push or deployment. [Evidence and limits](TRANSFER_PIPELINE.md).
+
 ## v1.2.1 — corrective release and registry qualification PASS
 
 Released [v1.2.1](https://github.com/seakleangnhak/harbor/releases/tag/v1.2.1) from `dbbe3d0`. Corrects PDF.js text-stream cancellation found by post-release WebKit checks; strict errors and four repeated PDF lifecycle cycles remain in both engines. Rolling Go cache keys restore compatible artifacts and save refreshed results per successful commit, fixing immutable dependency-only snapshots. Existing test commands, bounded offline execution and owner/tag/package gates remain.

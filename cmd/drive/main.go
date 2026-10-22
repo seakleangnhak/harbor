@@ -169,7 +169,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("initialize storage: %w", err)
 	}
-	engine, err := storage.New(storage.Config{DB: db, Key: key, Backend: backend, ChunkSize: storage.DefaultChunkSize, StagingDir: filepath.Join(dataDir, "upload-parts")})
+	readCacheDir := ""
+	if adapter == "telegram" {
+		readCacheDir = filepath.Join(dataDir, "read-cache")
+	}
+	engine, err := storage.New(storage.Config{DB: db, Key: key, Backend: backend, ChunkSize: storage.DefaultChunkSize, StagingDir: filepath.Join(dataDir, "upload-parts"), ReadCacheDir: readCacheDir})
 	if err != nil {
 		return fmt.Errorf("initialize encrypted engine: %w", err)
 	}
@@ -199,6 +203,20 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("initialize API (first boot requires drive init or DRIVE_OWNER_PASSWORD_FILE): %w", err)
 	}
+	storageDone := make(chan error, 1)
+	go func() {
+		err := engine.RunPending(ctx)
+		storageDone <- err
+		if err != nil {
+			stop()
+		}
+	}()
+	defer func() {
+		stop()
+		if err := <-storageDone; err != nil {
+			log.Print("Storage worker stopped; pending chunks remain recoverable")
+		}
+	}()
 	jobsDone := make(chan error, 1)
 	go func() {
 		err := app.RunCopyJobs(ctx)
@@ -215,7 +233,9 @@ func run() error {
 	}()
 	server := &http.Server{Addr: env("DRIVE_ADDR", "127.0.0.1:8080"), Handler: withSetupStatus(app.Handler()), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	done := make(chan struct{})
+	shutdownDone := make(chan struct{})
 	go func() {
+		defer close(shutdownDone)
 		select {
 		case <-ctx.Done():
 			shutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -226,7 +246,7 @@ func run() error {
 		case <-done:
 		}
 	}()
-	defer close(done)
+	defer func() { close(done); <-shutdownDone }()
 	log.Printf("Harbor listening on %s; storage=%s; encrypted chunks=%d MiB", server.Addr, adapter, storage.DefaultChunkSize>>20)
 	err = server.ListenAndServe()
 	if errors.Is(err, http.ErrServerClosed) {

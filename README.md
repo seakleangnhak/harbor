@@ -193,6 +193,8 @@ New uploads use independent **100 MiB** AES-256-GCM chunks with fresh nonces and
 
 Version 1.2.1 separates browser transport from storage: resumable **4 MiB** client parts stage encrypted on disk, then commit as one **100 MiB** Telegram chunk (plus its existing 32-byte encryption envelope). Live sent progress, server acceptance and Telegram saving are separate states. Part retries resend at most 4 MiB; a failed storage commit retains accepted parts for retry. Pause/reload resumes from server state after reselecting the original file. Pending parts need temporary local disk space of up to one storage chunk per upload and are omitted from recovery archives; after restore, resume resends those missing parts.
 
+Current source adds a bounded background saving pipeline: the browser sends the next chunk while Harbor saves an accepted chunk. At most two pending chunks per upload and four globally apply backpressure; they remain encrypted on disk. Pausing stops browser sending while queued backend saves continue. Final completion still requires remote readback and whole-file verification. A disposable encrypted read cache (two entries,256 MiB maximum) reduces repeated Telegram fetches for PDF/video ranges and repeated downloads; each read still authenticates and verifies its chunk. Cold previews still fetch a complete stored chunk. These source changes require fresh qualification before a new release; see [transfer performance qualification](docs/TRANSFER_PIPELINE.md).
+
 One modular monolith serves UI/API and durable copy jobs. No Redis, external worker or object-storage service is required. Stack: Go/Chi, SQLite WAL, gotd/td, React, TypeScript, Vite, Tailwind CSS, Radix/shadcn primitives and TanStack Query/Virtual. [Architecture](docs/ARCHITECTURE.md) · [API contract](docs/API_CONTRACT.md).
 
 ## Backups and recovery
@@ -230,6 +232,8 @@ Practical boundaries:
 - Chromium/WebKit and emulated mobile coverage do not establish physical Safari/iOS, every codec or complete accessibility certification. HEIC/HEIF images and MOV video use native browser decoding; unsupported codecs offer retry and original download.
 
 See [known limitations](docs/KNOWN_LIMITATIONS.md) before relying on Harbor for irreplaceable data.
+
+[Current project state](docs/CURRENT_PROJECT_STATE.md) separates released v1.2.1, local unreleased transfer changes, fresh verification and development priorities.
 
 ## Verify a checkout
 

@@ -43,22 +43,32 @@ type UploadSpec struct {
 }
 
 type Upload struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	ParentID       string    `json:"parent_id"`
-	Size           int64     `json:"size"`
-	MimeType       string    `json:"mime_type"`
-	SHA256         string    `json:"sha256"`
-	ChunkSize      int64     `json:"chunk_size"`
-	TotalChunks    int       `json:"total_chunks"`
-	ReceivedChunks []int     `json:"received_chunks"`
-	ReceivedBytes  int64     `json:"received_bytes"`
-	PartSize       int64     `json:"part_size,omitempty"`
-	StagedChunk    *int      `json:"staged_chunk,omitempty"`
-	StagedParts    []int     `json:"staged_parts,omitempty"`
-	StagedBytes    int64     `json:"staged_bytes,omitempty"`
-	Status         string    `json:"status"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID               string         `json:"id"`
+	Name             string         `json:"name"`
+	ParentID         string         `json:"parent_id"`
+	Size             int64          `json:"size"`
+	MimeType         string         `json:"mime_type"`
+	SHA256           string         `json:"sha256"`
+	ChunkSize        int64          `json:"chunk_size"`
+	TotalChunks      int            `json:"total_chunks"`
+	ReceivedChunks   []int          `json:"received_chunks"`
+	ReceivedBytes    int64          `json:"received_bytes"`
+	PartSize         int64          `json:"part_size,omitempty"`
+	StagedChunk      *int           `json:"staged_chunk,omitempty"`
+	StagedParts      []int          `json:"staged_parts,omitempty"`
+	StagedBytes      int64          `json:"staged_bytes,omitempty"`
+	PendingChunks    []PendingChunk `json:"pending_chunks,omitempty"`
+	MaxPendingChunks int            `json:"max_pending_chunks,omitempty"`
+	Status           string         `json:"status"`
+	CreatedAt        time.Time      `json:"created_at"`
+}
+
+type PendingChunk struct {
+	Index     int    `json:"index"`
+	Parts     []int  `json:"parts"`
+	Bytes     int64  `json:"bytes"`
+	State     string `json:"state"`
+	ErrorCode string `json:"error_code,omitempty"`
 }
 
 type Manifest struct {

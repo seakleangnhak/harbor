@@ -1,11 +1,9 @@
 package storage
 
 import (
-	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -23,11 +21,18 @@ type Engine struct {
 	db        *sql.DB
 	backend   BlobStore
 	staging   *LocalStore
+	readCache *readCache
 	aead      cipher.AEAD
 	chunkSize int64
 	slots     chan struct{}
 	mu        sync.Mutex
 	locks     map[string]*uploadLock
+	workLocks map[string]*uploadLock
+	active    map[string]context.CancelFunc
+	partSlots chan struct{}
+	writers   chan struct{}
+	pending   chan struct{}
+	running   bool
 }
 
 type uploadLock struct {
@@ -87,6 +92,9 @@ CREATE TABLE IF NOT EXISTS storage_parts (
 	if err != nil {
 		return nil, err
 	}
+	if err := initializePendingSchema(cfg.DB); err != nil {
+		return nil, err
+	}
 	var persistedChunkSize int64
 	if err := cfg.DB.QueryRow(`SELECT COALESCE(MAX(chunk_size),0) FROM storage_uploads`).Scan(&persistedChunkSize); err != nil {
 		return nil, err
@@ -95,22 +103,33 @@ CREATE TABLE IF NOT EXISTS storage_parts (
 	// active-buffer budget with uploads/finalization, including older manifests.
 	largestChunk := max(cfg.ChunkSize, min(persistedChunkSize, MaxChunkSize))
 	slots := min(4, int((256<<20)/largestChunk))
-	e := &Engine{db: cfg.DB, backend: cfg.Backend, aead: aead, chunkSize: cfg.ChunkSize, slots: make(chan struct{}, slots), locks: make(map[string]*uploadLock)}
+	e := &Engine{db: cfg.DB, backend: cfg.Backend, aead: aead, chunkSize: cfg.ChunkSize, slots: make(chan struct{}, slots), locks: make(map[string]*uploadLock), workLocks: make(map[string]*uploadLock), active: make(map[string]context.CancelFunc), partSlots: make(chan struct{}, 2), writers: make(chan struct{}, 1), pending: make(chan struct{}, 1)}
 	if cfg.StagingDir != "" {
 		e.staging, err = NewLocal(cfg.StagingDir)
 		if err != nil {
 			return nil, err
 		}
 	}
+	if cfg.ReadCacheDir != "" {
+		e.readCache, _ = newReadCache(cfg.ReadCacheDir)
+	}
 	return e, nil
 }
 
 func (e *Engine) lock(ctx context.Context, id string) (func(), error) {
+	return e.lockWith(ctx, id, e.locks)
+}
+
+func (e *Engine) workLock(ctx context.Context, id string) (func(), error) {
+	return e.lockWith(ctx, id, e.workLocks)
+}
+
+func (e *Engine) lockWith(ctx context.Context, id string, locks map[string]*uploadLock) (func(), error) {
 	e.mu.Lock()
-	l := e.locks[id]
+	l := locks[id]
 	if l == nil {
 		l = &uploadLock{gate: make(chan struct{}, 1)}
-		e.locks[id] = l
+		locks[id] = l
 	}
 	l.refs++
 	e.mu.Unlock()
@@ -118,7 +137,7 @@ func (e *Engine) lock(ctx context.Context, id string) (func(), error) {
 		e.mu.Lock()
 		l.refs--
 		if l.refs == 0 {
-			delete(e.locks, id)
+			delete(locks, id)
 		}
 		e.mu.Unlock()
 	}
@@ -161,9 +180,22 @@ func (e *Engine) Begin(ctx context.Context, spec domain.UploadSpec) (domain.Uplo
 }
 
 func (e *Engine) Status(ctx context.Context, id string) (domain.Upload, error) {
+	tx, err := e.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return domain.Upload{}, err
+	}
+	defer tx.Rollback()
+	u, err := e.status(ctx, tx, id)
+	if err != nil {
+		return u, err
+	}
+	return u, tx.Commit()
+}
+
+func (e *Engine) status(ctx context.Context, query storageQuery, id string) (domain.Upload, error) {
 	var u domain.Upload
 	var created, expected string
-	err := e.db.QueryRowContext(ctx, `SELECT id,name,parent_id,size,mime_type,expected_sha256,sha256,chunk_size,status,created_at FROM storage_uploads WHERE id=?`, id).Scan(&u.ID, &u.Name, &u.ParentID, &u.Size, &u.MimeType, &expected, &u.SHA256, &u.ChunkSize, &u.Status, &created)
+	err := query.QueryRowContext(ctx, `SELECT id,name,parent_id,size,mime_type,expected_sha256,sha256,chunk_size,status,created_at FROM storage_uploads WHERE id=?`, id).Scan(&u.ID, &u.Name, &u.ParentID, &u.Size, &u.MimeType, &expected, &u.SHA256, &u.ChunkSize, &u.Status, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return u, domain.ErrNotFound
 	}
@@ -185,7 +217,7 @@ func (e *Engine) Status(ctx context.Context, id string) (domain.Upload, error) {
 		u.TotalChunks++
 	}
 	u.ReceivedChunks = []int{}
-	rows, err := e.db.QueryContext(ctx, `SELECT idx,size FROM storage_chunks WHERE upload_id=? ORDER BY idx`, id)
+	rows, err := query.QueryContext(ctx, `SELECT idx,size FROM storage_chunks WHERE upload_id=? ORDER BY idx`, id)
 	if err != nil {
 		return u, err
 	}
@@ -206,8 +238,9 @@ func (e *Engine) Status(ctx context.Context, id string) (domain.Upload, error) {
 	}
 	if e.staging != nil {
 		u.PartSize = min(TransportPartSize, u.ChunkSize)
+		u.MaxPendingChunks = pendingPerUpload
 		if u.Status == "uploading" {
-			if err := e.stagedStatus(ctx, &u); err != nil {
+			if err := e.stagedStatus(ctx, query, &u); err != nil {
 				return u, err
 			}
 		}
@@ -266,16 +299,29 @@ func (e *Engine) chunks(ctx context.Context, id string) ([]chunk, error) {
 }
 
 func (e *Engine) PutChunk(ctx context.Context, id string, index int, body io.Reader, expectedHash string) (domain.Upload, error) {
+	workDone, err := e.workLock(ctx, id)
+	if err != nil {
+		return domain.Upload{}, err
+	}
+	defer workDone()
 	unlock, err := e.lock(ctx, id)
 	if err != nil {
 		return domain.Upload{}, err
 	}
 	defer unlock()
+	if err := e.writable(ctx, id); err != nil {
+		return domain.Upload{}, err
+	}
 	var staged int
 	if err := e.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM storage_parts WHERE upload_id=? AND chunk_idx=?`, id, index).Scan(&staged); err != nil {
 		return domain.Upload{}, err
 	}
 	if staged != 0 {
+		return domain.Upload{}, domain.ErrConflict
+	}
+	if state, err := e.pendingState(ctx, id, index); err != nil {
+		return domain.Upload{}, err
+	} else if state != "" {
 		return domain.Upload{}, domain.ErrConflict
 	}
 	return e.putChunkLocked(ctx, id, index, body, expectedHash)
@@ -300,20 +346,9 @@ func (e *Engine) putChunkLocked(ctx context.Context, id string, index int, body 
 		return u, err
 	}
 	defer func() { <-e.slots }()
-	headerSize := 4 + e.aead.NonceSize()
-	sealed := make([]byte, headerSize, int64(headerSize)+expectedSize+1+bytes.MinRead+int64(e.aead.Overhead()))
-	buffer := bytes.NewBuffer(sealed[headerSize:])
-	_, err = buffer.ReadFrom(io.LimitReader(body, expectedSize+1))
+	sealed, digest, err := e.sealChunk(u, index, body, expectedHash)
 	if err != nil {
 		return u, err
-	}
-	data := buffer.Bytes()
-	if int64(len(data)) != expectedSize {
-		return u, fmt.Errorf("%w: chunk size mismatch", domain.ErrInvalid)
-	}
-	digest := fmt.Sprintf("%x", sha256.Sum256(data))
-	if expectedHash != "" && !strings.EqualFold(digest, expectedHash) {
-		return u, domain.ErrIntegrity
 	}
 	var oldHash string
 	err = e.db.QueryRowContext(ctx, `SELECT sha256 FROM storage_chunks WHERE upload_id=? AND idx=?`, id, index).Scan(&oldHash)
@@ -326,19 +361,13 @@ func (e *Engine) putChunkLocked(ctx context.Context, id string, index int, body 
 	if !errors.Is(err, sql.ErrNoRows) {
 		return u, err
 	}
-	copy(sealed, "HD01")
-	nonce := sealed[4:]
-	if _, err = rand.Read(nonce); err != nil {
-		return u, err
-	}
-	sealed = e.aead.Seal(sealed, nonce, data, chunkAAD(id, index))
-	ref, err := e.backend.Put(ctx, id, sealed)
+	ref, err := e.putCiphertext(ctx, id, sealed)
 	if err != nil {
 		return u, err
 	}
 	// ponytail: a crash before the SQL commit can orphan ciphertext; add conservative
 	// adapter enumeration and garbage collection when orphan storage needs reclaiming.
-	_, err = e.db.ExecContext(ctx, `INSERT INTO storage_chunks(upload_id,idx,size,sha256,ref) VALUES(?,?,?,?,?)`, id, index, len(data), digest, ref)
+	_, err = e.db.ExecContext(ctx, `INSERT INTO storage_chunks(upload_id,idx,size,sha256,ref) VALUES(?,?,?,?,?)`, id, index, expectedSize, digest, ref)
 	if err != nil {
 		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
@@ -355,6 +384,10 @@ func (e *Engine) plaintext(ctx context.Context, id string, c chunk) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
+	return e.decryptChunk(id, c, sealed)
+}
+
+func (e *Engine) decryptChunk(id string, c chunk, sealed []byte) ([]byte, error) {
 	n := e.aead.NonceSize()
 	if len(sealed) < 4+n+e.aead.Overhead() || string(sealed[:4]) != "HD01" || int64(len(sealed)) != 4+int64(n)+c.size+int64(e.aead.Overhead()) {
 		return nil, domain.ErrIntegrity
@@ -371,6 +404,18 @@ func manifest(u domain.Upload) domain.Manifest {
 }
 
 func (e *Engine) Complete(ctx context.Context, id string) (domain.Manifest, error) {
+	current, err := e.Status(ctx, id)
+	if err != nil {
+		return domain.Manifest{}, err
+	}
+	if current.Status != "complete" && (len(current.ReceivedChunks) != current.TotalChunks || current.ReceivedBytes != current.Size) {
+		return domain.Manifest{}, fmt.Errorf("%w: upload incomplete", domain.ErrConflict)
+	}
+	workDone, err := e.workLock(ctx, id)
+	if err != nil {
+		return domain.Manifest{}, err
+	}
+	defer workDone()
 	unlock, err := e.lock(ctx, id)
 	if err != nil {
 		return domain.Manifest{}, err
@@ -385,6 +430,9 @@ func (e *Engine) Complete(ctx context.Context, id string) (domain.Manifest, erro
 			return domain.Manifest{}, err
 		}
 		return manifest(u), nil
+	}
+	if err := e.writable(ctx, id); err != nil {
+		return domain.Manifest{}, err
 	}
 	if len(u.ReceivedChunks) != u.TotalChunks || u.ReceivedBytes != u.Size {
 		return domain.Manifest{}, fmt.Errorf("%w: upload incomplete", domain.ErrConflict)
@@ -454,6 +502,16 @@ func (e *Engine) Cancel(ctx context.Context, id string) error { return e.remove(
 func (e *Engine) DeleteFile(ctx context.Context, id string) error { return e.remove(ctx, id, true) }
 
 func (e *Engine) remove(ctx context.Context, id string, completed bool) error {
+	if !completed {
+		if err := e.cancelPending(ctx, id); err != nil {
+			return err
+		}
+	}
+	workDone, err := e.workLock(ctx, id)
+	if err != nil {
+		return err
+	}
+	defer workDone()
 	unlock, err := e.lock(ctx, id)
 	if err != nil {
 		return err
@@ -472,6 +530,9 @@ func (e *Engine) remove(ctx context.Context, id string, completed bool) error {
 	}
 	// Keep manifest until every deletion succeeds, so interruption can retry.
 	for _, c := range chunks {
+		if e.readCache != nil {
+			e.readCache.invalidate(c.ref)
+		}
 		if err := e.backend.Delete(ctx, c.ref); err != nil {
 			return err
 		}

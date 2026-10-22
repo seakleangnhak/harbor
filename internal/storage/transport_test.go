@@ -67,9 +67,6 @@ func TestTransportRestartEncryptedPartsAndCommit(t *testing.T) {
 	if _, err := e.Complete(ctx, u.ID); !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("staged upload became complete: %v", err)
 	}
-	if _, err := e.PutPart(ctx, u.ID, 1, 0, bytes.NewReader(make([]byte, 31)), digest(make([]byte, 31))); !errors.Is(err, domain.ErrConflict) {
-		t.Fatalf("second pending storage chunk accepted: %v", err)
-	}
 	if _, err := e.PutChunk(ctx, u.ID, 0, bytes.NewReader(nil), ""); !errors.Is(err, domain.ErrConflict) {
 		t.Fatalf("legacy endpoint bypassed staged chunk: %v", err)
 	}

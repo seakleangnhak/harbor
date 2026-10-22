@@ -61,7 +61,7 @@ Use a private channel link or the legacy numeric ID/access-hash pair, never both
 
 In **Domains**, add your domain, select service `drive`, container port `8080`, and enable HTTPS with a valid certificate. Configure DNS to reach the deployment server. Keep browser and API on the same origin; credential entry and secure cookies require HTTPS for remote access. Do not add a host `ports` mapping.
 
-Configure proxy request-size limits to accept at least a 100 MiB request body, plus any proxy overhead, and timeouts long enough for Telegram transfer latency. Chunk processing can take several minutes on slow connections; the Telegram operation deadline is bounded to ten minutes. The server authenticates a whole chunk before releasing plaintext, so a small preview can wait for a full 100 MiB fetch.
+Browser uploads use 4 MiB request bodies in v1.2.1. Keep proxy limits at least 100 MiB, plus any proxy overhead, if legacy whole-chunk API clients or file-copy requests must remain supported. Configure timeouts long enough for Telegram transfer latency. Chunk processing can take several minutes on slow connections; the Telegram operation deadline is bounded to ten minutes. The server authenticates a whole chunk before releasing plaintext, so a small preview can wait for a full 100 MiB fetch.
 
 Use **Preview Compose** to check proxy labels/network, external volume `harbor-data`, runtime variables and one replica. Do not share the rendered preview; it may contain interpolated secrets. Click **Deploy**.
 

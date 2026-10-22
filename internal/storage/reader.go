@@ -36,7 +36,13 @@ func (r *chunkReader) Read(p []byte) (int, error) {
 	idx := int(r.pos / r.upload.ChunkSize)
 	if r.loaded != idx {
 		r.data, r.loaded = nil, -1
-		data, err := r.engine.plaintext(r.ctx, r.upload.ID, r.chunks[idx])
+		var data []byte
+		var err error
+		if r.engine.readCache != nil {
+			data, err = r.engine.readCache.plaintext(r.ctx, r.engine, r.upload.ID, r.chunks[idx])
+		} else {
+			data, err = r.engine.plaintext(r.ctx, r.upload.ID, r.chunks[idx])
+		}
 		if err != nil {
 			return 0, err
 		}

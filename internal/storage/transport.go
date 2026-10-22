@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,7 +24,11 @@ type stagedPart struct {
 }
 
 func (e *Engine) stagedParts(ctx context.Context, id string) ([]stagedPart, error) {
-	rows, err := e.db.QueryContext(ctx, `SELECT chunk_idx,part_idx,size,sha256,ref FROM storage_parts WHERE upload_id=? ORDER BY chunk_idx,part_idx`, id)
+	return stagedPartsFrom(ctx, e.db, id)
+}
+
+func stagedPartsFrom(ctx context.Context, query storageQuery, id string) ([]stagedPart, error) {
+	rows, err := query.QueryContext(ctx, `SELECT chunk_idx,part_idx,size,sha256,ref FROM storage_parts WHERE upload_id=? ORDER BY chunk_idx,part_idx`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -52,8 +57,8 @@ func transportGeometry(u domain.Upload, index, part int) (int64, int64, error) {
 	return min(partSize, size-int64(part)*partSize), count, nil
 }
 
-func (e *Engine) stagedStatus(ctx context.Context, u *domain.Upload) error {
-	parts, err := e.stagedParts(ctx, u.ID)
+func (e *Engine) stagedStatus(ctx context.Context, query storageQuery, u *domain.Upload) error {
+	parts, err := stagedPartsFrom(ctx, query, u.ID)
 	if err != nil {
 		return err
 	}
@@ -61,16 +66,53 @@ func (e *Engine) stagedStatus(ctx context.Context, u *domain.Upload) error {
 	for _, index := range u.ReceivedChunks {
 		committed[index] = true
 	}
+	pending := make(map[int]*domain.PendingChunk)
+	rows, err := query.QueryContext(ctx, `SELECT idx,state,error_code FROM storage_pending_chunks WHERE upload_id=? ORDER BY idx`, u.ID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		p := &domain.PendingChunk{Parts: []int{}}
+		if err := rows.Scan(&p.Index, &p.State, &p.ErrorCode); err != nil {
+			rows.Close()
+			return err
+		}
+		if _, _, err := transportGeometry(*u, p.Index, 0); err != nil {
+			rows.Close()
+			return domain.ErrIntegrity
+		}
+		switch p.State {
+		case "receiving", "queued", "storing", "failed":
+		default:
+			rows.Close()
+			return domain.ErrIntegrity
+		}
+		switch p.ErrorCode {
+		case "", "integrity_failed", "storage_unavailable", "cancellation_pending":
+		default:
+			rows.Close()
+			return domain.ErrIntegrity
+		}
+		if !committed[p.Index] {
+			pending[p.Index] = p
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
 	for _, p := range parts {
 		if committed[p.chunkIndex] {
 			continue // A crash after remote commit may leave disposable local parts.
 		}
 		size, _, err := transportGeometry(*u, p.chunkIndex, p.index)
-		if err != nil || p.size != size || !validHash(p.hash) || (u.StagedChunk != nil && *u.StagedChunk != p.chunkIndex) {
+		if err != nil || p.size != size || !validHash(p.hash) {
 			return domain.ErrIntegrity
 		}
-		index := p.chunkIndex
-		u.StagedChunk = &index
+		if pending[p.chunkIndex] == nil {
+			pending[p.chunkIndex] = &domain.PendingChunk{Index: p.chunkIndex, Parts: []int{}, State: "receiving"}
+		}
 		path, err := e.staging.path(p.ref)
 		if err != nil {
 			return domain.ErrIntegrity
@@ -85,8 +127,24 @@ func (e *Engine) stagedStatus(ctx context.Context, u *domain.Upload) error {
 		if !info.Mode().IsRegular() || info.Size() != 4+int64(e.aead.NonceSize())+p.size+int64(e.aead.Overhead()) {
 			continue
 		}
-		u.StagedParts = append(u.StagedParts, p.index)
-		u.StagedBytes += p.size
+		pending[p.chunkIndex].Parts = append(pending[p.chunkIndex].Parts, p.index)
+		pending[p.chunkIndex].Bytes += p.size
+	}
+	for _, p := range pending {
+		if p.State == "queued" || p.State == "storing" {
+			_, count, err := transportGeometry(*u, p.Index, 0)
+			if err != nil || len(p.Parts) != int(count) {
+				p.State, p.ErrorCode = "failed", "integrity_failed"
+			}
+		}
+		u.PendingChunks = append(u.PendingChunks, *p)
+	}
+	sort.Slice(u.PendingChunks, func(i, j int) bool { return u.PendingChunks[i].Index < u.PendingChunks[j].Index })
+	if len(u.PendingChunks) > 0 {
+		oldest := u.PendingChunks[0]
+		u.StagedChunk = &oldest.Index
+		u.StagedParts = oldest.Parts
+		u.StagedBytes = oldest.Bytes
 	}
 	return nil
 }
@@ -131,18 +189,38 @@ func (e *Engine) PutPart(ctx context.Context, id string, chunkIndex, partIndex i
 	if err != nil {
 		return u, err
 	}
-	if u.Status != "uploading" || (u.StagedChunk != nil && *u.StagedChunk != chunkIndex) {
-		return u, domain.ErrConflict
+	if err := e.writable(ctx, id); err != nil {
+		return u, err
 	}
 	for _, index := range u.ReceivedChunks {
 		if index == chunkIndex {
 			return u, domain.ErrConflict
 		}
 	}
-	if err := e.acquire(ctx); err != nil {
+	state, err := e.reservePending(ctx, id, chunkIndex)
+	if err != nil {
 		return u, err
 	}
-	defer func() { <-e.slots }()
+	if state == "queued" {
+		for _, pending := range u.PendingChunks {
+			if pending.Index == chunkIndex && pending.State == "failed" && pending.ErrorCode == "integrity_failed" {
+				if _, err := e.db.ExecContext(ctx, `UPDATE storage_pending_chunks SET state='failed',error_code='integrity_failed' WHERE upload_id=? AND idx=?`, id, chunkIndex); err != nil {
+					return u, err
+				}
+				state = "failed"
+			}
+		}
+	}
+	if state == "queued" || state == "storing" {
+		return u, domain.ErrConflict
+	}
+	defer e.clearEmptyReservation(ctx, id, chunkIndex)
+	select {
+	case e.partSlots <- struct{}{}:
+		defer func() { <-e.partSlots }()
+	case <-ctx.Done():
+		return u, ctx.Err()
+	}
 	headerSize := 4 + e.aead.NonceSize()
 	sealed := make([]byte, headerSize, int64(headerSize)+size+1+bytes.MinRead+int64(e.aead.Overhead()))
 	buffer := bytes.NewBuffer(sealed[headerSize:])
@@ -235,6 +313,11 @@ func (e *Engine) CommitChunk(ctx context.Context, id string, index int) (domain.
 	if e.staging == nil {
 		return domain.Upload{}, domain.ErrInvalid
 	}
+	workDone, err := e.workLock(ctx, id)
+	if err != nil {
+		return domain.Upload{}, err
+	}
+	defer workDone()
 	unlock, err := e.lock(ctx, id)
 	if err != nil {
 		return domain.Upload{}, err
@@ -256,7 +339,16 @@ func (e *Engine) CommitChunk(ctx context.Context, id string, index int) (domain.
 			return e.Status(ctx, id)
 		}
 	}
-	if u.StagedChunk == nil || *u.StagedChunk != index || len(u.StagedParts) != int(count) {
+	if err := e.writable(ctx, id); err != nil {
+		return u, err
+	}
+	ready := false
+	for _, pending := range u.PendingChunks {
+		if pending.Index == index {
+			ready = len(pending.Parts) == int(count) && pending.State != "queued" && pending.State != "storing"
+		}
+	}
+	if !ready {
 		return u, domain.ErrConflict
 	}
 	parts, err := e.stagedParts(ctx, id)
@@ -296,10 +388,24 @@ func (e *Engine) clearStaged(ctx context.Context, id string, index *int) error {
 			return err
 		}
 	}
-	if index == nil {
-		_, err = e.db.ExecContext(ctx, `DELETE FROM storage_parts WHERE upload_id=?`, id)
-	} else {
-		_, err = e.db.ExecContext(ctx, `DELETE FROM storage_parts WHERE upload_id=? AND chunk_idx=?`, id, *index)
+	tx, err := e.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
 	}
-	return err
+	defer tx.Rollback()
+	if index == nil {
+		_, err = tx.ExecContext(ctx, `DELETE FROM storage_parts WHERE upload_id=?`, id)
+		if err == nil {
+			_, err = tx.ExecContext(ctx, `DELETE FROM storage_pending_chunks WHERE upload_id=?`, id)
+		}
+	} else {
+		_, err = tx.ExecContext(ctx, `DELETE FROM storage_parts WHERE upload_id=? AND chunk_idx=?`, id, *index)
+		if err == nil {
+			_, err = tx.ExecContext(ctx, `DELETE FROM storage_pending_chunks WHERE upload_id=? AND idx=?`, id, *index)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }

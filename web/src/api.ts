@@ -84,6 +84,7 @@ export const api = {
   putChunk: (id: string, index: number, body: Blob, digest: string, signal: AbortSignal) => request<Upload>(`/uploads/${encodeURIComponent(id)}/chunks/${index}`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream', 'X-Chunk-SHA256': digest }, body, signal }),
   putPart: putUploadPart,
   commitChunk: (id: string, index: number, signal: AbortSignal) => request<Upload>(`/uploads/${encodeURIComponent(id)}/chunks/${index}/commit`, { ...json('POST', {}), signal }),
+  queueChunk: (id: string, index: number, signal: AbortSignal) => request<Upload>(`/uploads/${encodeURIComponent(id)}/chunks/${index}/commit`, { ...json('POST', { background: true }), signal }),
   completeUpload: (id: string, signal?: AbortSignal) => request<DriveNode>(`/uploads/${encodeURIComponent(id)}/complete`, { ...json('POST', {}), signal }),
   cancelUpload: (id: string) => request<void>(`/uploads/${encodeURIComponent(id)}`, json('DELETE')),
   copyJobs: () => request<{ items: CopyJob[] }>('/copy-jobs'),

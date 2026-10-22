@@ -30,11 +30,12 @@ type ReadSeekCloser interface {
 }
 
 type Config struct {
-	DB         *sql.DB
-	Key        []byte
-	Backend    BlobStore
-	ChunkSize  int64
-	StagingDir string
+	DB           *sql.DB
+	Key          []byte
+	Backend      BlobStore
+	ChunkSize    int64
+	StagingDir   string
+	ReadCacheDir string
 }
 
 // Engine implementation supplies these operations; kept as a compile-time port
@@ -46,6 +47,7 @@ type Service interface {
 	PutChunk(context.Context, string, int, io.Reader, string) (domain.Upload, error)
 	PutPart(context.Context, string, int, int, io.Reader, string) (domain.Upload, error)
 	CommitChunk(context.Context, string, int) (domain.Upload, error)
+	QueueChunk(context.Context, string, int) (domain.Upload, error)
 	Complete(context.Context, string) (domain.Manifest, error)
 	Open(context.Context, string) (ReadSeekCloser, domain.Manifest, error)
 	Cancel(context.Context, string) error

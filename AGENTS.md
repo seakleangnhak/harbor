@@ -12,6 +12,13 @@ Build a private single-owner drive. Keep changes small, inspect existing code, v
 
 ## Contracts and security
 
+### Bounded transfer pipeline ownership override
+
+- Current task: faster upload/download/preview only. Work in sanitized export; preserve original repository, deployment and runtime state. No release, push or deployment. Synthetic fixtures only; existing isolated execution rules remain.
+- Storage agent owns `engine.go`, `transport.go`, new durable upload-worker files and storage upload tests. Frontend agent owns upload hook, transfer helpers/types/API, Transfers and upload tests. Reader agent owns `reader.go`, new `read_cache.go` and cache tests. Coordinator owns contracts/domain, API, startup, docs and cross-component checks. No shared-file concurrent edits; agents never commit.
+- Keep 100 MiB storage chunks and 4 MiB browser parts. Add opt-in durable background commit while retaining synchronous legacy commit and whole-chunk copy APIs. Raw received bytes remain remotely stored; pending bytes never imply file completion. Bound staging/worker concurrency; preserve encrypted staging, idempotency, cancellation, restart recovery and final remote integrity verification.
+- Reader cache contains ciphertext only in private bounded local storage. Each hit still authenticates and verifies SHA-256. Finalization/content integrity checks bypass cache to verify actual adapter content. No plaintext cache, new dependencies or weakened HTTP guards.
+
 ### v1.2.0 release ownership override
 
 - Owner authorizes scoped CI/CD simplification, sanitized-source push, a new annotated release and GHCR image publication. Preserve original private repository/history, deployment and all runtime state. No visibility changes or remote deployment.
