@@ -50,9 +50,6 @@ func (r *chunkReader) Read(p []byte) (int, error) {
 	}
 	n := copy(p, r.data[r.pos%r.upload.ChunkSize:])
 	r.pos += int64(n)
-	if r.pos%r.upload.ChunkSize == 0 || r.pos == r.upload.Size {
-		r.data, r.loaded = nil, -1
-	}
 	return n, nil
 }
 

@@ -85,6 +85,10 @@ func (s *LocalStore) Get(ctx context.Context, ref string) ([]byte, error) {
 }
 
 func (s *LocalStore) getBounded(ctx context.Context, ref string, limit int64) ([]byte, error) {
+	return s.getBoundedInto(ctx, ref, limit, nil)
+}
+
+func (s *LocalStore) getBoundedInto(ctx context.Context, ref string, limit int64, data []byte) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -104,7 +108,10 @@ func (s *LocalStore) getBounded(ctx context.Context, ref string, limit int64) ([
 		return nil, err
 	}
 	defer f.Close()
-	buffer := bytes.NewBuffer(make([]byte, 0, info.Size()+1+bytes.MinRead))
+	if int64(cap(data)) < info.Size()+1+bytes.MinRead {
+		data = make([]byte, 0, info.Size()+1+bytes.MinRead)
+	}
+	buffer := bytes.NewBuffer(data[:0])
 	if _, err := buffer.ReadFrom(io.LimitReader(f, limit+1)); err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"io"
@@ -352,27 +353,43 @@ func (s checkedStream) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// Let ServeContent resolve conditional requests and ranges without fetching a
+// remote chunk. Successful bodies still authenticate before sending headers.
+type contentHead struct {
+	header http.Header
+	status int
+	body   bytes.Buffer
+}
+
+func (h *contentHead) Header() http.Header         { return h.header }
+func (h *contentHead) WriteHeader(status int)      { h.status = status }
+func (h *contentHead) Write(p []byte) (int, error) { return h.body.Write(p) }
+
 func firstRangeOffset(header string, size int64) int64 {
 	if !strings.HasPrefix(header, "bytes=") {
 		return 0
 	}
-	first, _, _ := strings.Cut(strings.TrimPrefix(header, "bytes="), ",")
-	start, end, ok := strings.Cut(strings.TrimSpace(first), "-")
-	if !ok {
-		return 0
-	}
-	if start == "" {
-		suffix, err := strconv.ParseInt(end, 10, 64)
-		if err == nil && suffix > 0 && suffix < size {
-			return size - suffix
+	for _, part := range strings.Split(strings.TrimPrefix(header, "bytes="), ",") {
+		start, end, ok := strings.Cut(strings.TrimSpace(part), "-")
+		if !ok {
+			return 0
 		}
-		return 0
+		if start == "" {
+			suffix, err := strconv.ParseInt(end, 10, 64)
+			if err == nil && suffix > 0 && suffix < size {
+				return size - suffix
+			}
+			return 0
+		}
+		value, err := strconv.ParseInt(start, 10, 64)
+		if err != nil || value < 0 {
+			return 0
+		}
+		if value < size {
+			return value
+		}
 	}
-	value, err := strconv.ParseInt(start, 10, 64)
-	if err != nil || value < 0 || value >= size {
-		return 0
-	}
-	return value
+	return 0
 }
 
 func (s *Server) content(w http.ResponseWriter, r *http.Request) {
@@ -395,8 +412,40 @@ func (s *Server) content(w http.ResponseWriter, r *http.Request) {
 		respondError(w, domain.ErrIntegrity)
 		return
 	}
-	if n.Size > 0 && r.Method != http.MethodHead {
-		offset := firstRangeOffset(r.Header.Get("Range"), n.Size)
+	typeName := inlineContentType(n.Name, n.MimeType)
+	disposition := "inline"
+	if typeName == "" {
+		typeName = "application/octet-stream"
+		disposition = "attachment"
+	} else if r.URL.Query().Get("download") == "1" {
+		disposition = "attachment"
+	}
+	headers := w.Header().Clone()
+	headers.Set("Content-Type", typeName)
+	headers.Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": n.Name}))
+	headers.Set("Content-Security-Policy", "sandbox; default-src 'none'")
+	headers.Set("Accept-Ranges", "bytes")
+	headers.Set("ETag", `"`+n.SHA256+`"`)
+	headers.Set("X-Content-SHA256", n.SHA256)
+	probe := &contentHead{header: headers.Clone()}
+	head := r.Clone(r.Context())
+	head.Method = http.MethodHead
+	http.ServeContent(probe, head, n.Name, n.UpdatedAt, reader)
+	if r.Method == http.MethodHead || (probe.status != http.StatusOK && probe.status != http.StatusPartialContent) {
+		for key, values := range probe.header {
+			w.Header()[key] = values
+		}
+		w.WriteHeader(probe.status)
+		if r.Method != http.MethodHead {
+			_, _ = w.Write(probe.body.Bytes())
+		}
+		return
+	}
+	if n.Size > 0 {
+		offset := int64(0)
+		if probe.status == http.StatusPartialContent {
+			offset = firstRangeOffset(r.Header.Get("Range"), n.Size)
+		}
 		if _, err = reader.Seek(offset, io.SeekStart); err != nil {
 			respondError(w, err)
 			return
@@ -414,19 +463,8 @@ func (s *Server) content(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	typeName := inlineContentType(n.Name, n.MimeType)
-	disposition := "inline"
-	if typeName == "" {
-		typeName = "application/octet-stream"
-		disposition = "attachment"
-	} else if r.URL.Query().Get("download") == "1" {
-		disposition = "attachment"
+	for key, values := range headers {
+		w.Header()[key] = values
 	}
-	w.Header().Set("Content-Type", typeName)
-	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": n.Name}))
-	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'")
-	w.Header().Set("Accept-Ranges", "bytes")
-	w.Header().Set("ETag", `"`+n.SHA256+`"`)
-	w.Header().Set("X-Content-SHA256", n.SHA256)
 	http.ServeContent(w, r, n.Name, n.UpdatedAt, checkedStream{reader})
 }

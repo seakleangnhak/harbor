@@ -154,22 +154,27 @@ func transportAAD(id string, chunkIndex, partIndex int) []byte {
 }
 
 func (e *Engine) stagedPlaintext(ctx context.Context, id string, p stagedPart) ([]byte, error) {
+	data, _, err := e.stagedPlaintextBuffer(ctx, id, p, nil)
+	return data, err
+}
+
+func (e *Engine) stagedPlaintextBuffer(ctx context.Context, id string, p stagedPart, buffer []byte) ([]byte, []byte, error) {
 	n := e.aead.NonceSize()
-	sealed, err := e.staging.getBounded(ctx, p.ref, 4+int64(n)+p.size+int64(e.aead.Overhead()))
+	sealed, err := e.staging.getBoundedInto(ctx, p.ref, 4+int64(n)+p.size+int64(e.aead.Overhead()), buffer)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("%w: staged part missing", domain.ErrIntegrity)
+		return nil, nil, fmt.Errorf("%w: staged part missing", domain.ErrIntegrity)
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if int64(len(sealed)) != 4+int64(n)+p.size+int64(e.aead.Overhead()) || string(sealed[:4]) != "HP01" {
-		return nil, domain.ErrIntegrity
+		return nil, nil, domain.ErrIntegrity
 	}
 	data, err := e.aead.Open(sealed[4+n:4+n], sealed[4:4+n], sealed[4+n:], transportAAD(id, p.chunkIndex, p.index))
 	if err != nil || fmt.Sprintf("%x", sha256.Sum256(data)) != p.hash {
-		return nil, domain.ErrIntegrity
+		return nil, nil, domain.ErrIntegrity
 	}
-	return data, nil
+	return data, sealed[:0], nil
 }
 
 func (e *Engine) PutPart(ctx context.Context, id string, chunkIndex, partIndex int, body io.Reader, expectedHash string) (domain.Upload, error) {
@@ -278,6 +283,7 @@ type transportReader struct {
 	id     string
 	parts  []stagedPart
 	data   []byte
+	buffer []byte
 }
 
 func (r *transportReader) Read(p []byte) (int, error) {
@@ -292,7 +298,8 @@ func (r *transportReader) Read(p []byte) (int, error) {
 			return 0, io.EOF
 		}
 		var err error
-		r.data, err = r.engine.stagedPlaintext(r.ctx, r.id, r.parts[0])
+		// Private buffer is reused only after its verified plaintext is consumed.
+		r.data, r.buffer, err = r.engine.stagedPlaintextBuffer(r.ctx, r.id, r.parts[0], r.buffer)
 		if err != nil {
 			if errors.Is(err, domain.ErrIntegrity) {
 				// Retain the expected hash but stop advertising a corrupt local part.
