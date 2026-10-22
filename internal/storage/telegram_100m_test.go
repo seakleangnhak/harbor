@@ -25,6 +25,8 @@ func TestTelegram100MiBDocumentUsesBigPartsAndDownloadsIntact(t *testing.T) {
 	var mu sync.Mutex
 	parts := make(map[int]bool)
 	var fileID int64
+	var downloadedBytes int64
+	resolutions, downloadRequests := 0, 0
 	client := telegramOfflineClient(func(_ context.Context, input bin.Encoder, output bin.Decoder) error {
 		switch request := input.(type) {
 		case *tg.UploadSaveBigFilePartRequest:
@@ -56,9 +58,15 @@ func TestTelegram100MiBDocumentUsesBigPartsAndDownloadsIntact(t *testing.T) {
 			}
 			output.(*tg.UpdatesBox).Updates = &tg.Updates{Updates: []tg.UpdateClass{&tg.UpdateMessageID{ID: 7, RandomID: request.RandomID}}}
 		case *tg.ChannelsGetMessagesRequest:
+			resolutions++
 			output.(*tg.MessagesMessagesBox).Messages = &tg.MessagesChannelMessages{Messages: []tg.MessageClass{&tg.Message{ID: 7, Media: &tg.MessageMediaDocument{Document: &tg.Document{ID: 8, AccessHash: 9, Size: maxCiphertextSize}}}}}
 		case *tg.UploadGetFileRequest:
+			if request.Offset != downloadedBytes || request.Limit != partSize {
+				return domain.ErrIntegrity
+			}
 			end := min(request.Offset+int64(request.Limit), maxCiphertextSize)
+			downloadedBytes += end - request.Offset
+			downloadRequests++
 			output.(*tg.UploadFileBox).File = &tg.UploadFile{Type: &tg.StorageFileUnknown{}, Bytes: payload[request.Offset:end]}
 		default:
 			t.Errorf("unexpected large-file RPC: %T", input)
@@ -78,6 +86,10 @@ func TestTelegram100MiBDocumentUsesBigPartsAndDownloadsIntact(t *testing.T) {
 	if err != nil || len(got) != int(maxCiphertextSize) || sha256.Sum256(got) != sha256.Sum256(payload[:maxCiphertextSize]) {
 		t.Fatalf("100 MiB Telegram document checksum: bytes=%d error=%v", len(got), err)
 	}
+	if resolutions != 1 || downloadRequests != wantParts || downloadedBytes != maxCiphertextSize {
+		t.Fatalf("read amplification changed: resolutions=%d requests=%d bytes=%d", resolutions, downloadRequests, downloadedBytes)
+	}
+	t.Logf("controlled Telegram read: resolutions=%d requests=%d bytes=%d", resolutions, downloadRequests, downloadedBytes)
 	if _, err := downloadTelegramDocument(context.Background(), &tg.Document{Size: maxCiphertextSize + 1}, nil, 0, nil, nil); !errors.Is(err, domain.ErrIntegrity) {
 		t.Fatalf("over-limit Telegram download attempted RPC: %v", err)
 	}

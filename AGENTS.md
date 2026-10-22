@@ -12,6 +12,13 @@ Build a private single-owner drive. Keep changes small, inspect existing code, v
 
 ## Contracts and security
 
+### Milestone A transfer stabilization ownership override
+
+- Maintained source is this sanitized export. Preserve checkpoint `59aa6d8` and all original runtime/history. Local commits only; no push, tag, publication or deployment upgrade. User authorizes coordinator-only bounded live Telegram qualification with isolated data and serialized authorization; this supersedes earlier task-specific synthetic-only limits for that qualification.
+- Upload agent: `internal/storage/{engine,transport,pipeline}.go`, upload/pipeline tests only. Cache agent: `internal/storage/{reader,read_cache,telegram}.go`, cache/Telegram tests and benchmarks only. Reliability agent: new `scripts/milestone_a*`, new `internal/storage/milestone_a*_test.go` and ignored `output/milestone-a/reliability/`; coordinate test helper contracts before writing. No overlapping edits; agents never commit or read real credentials/session/data/logs.
+- Coordinator owns shared contracts/domain/API/startup/version/build/frontend/docs and live qualification. Keep two pending chunks/upload, four globally, one saving worker, 100 MiB storage chunks and 4 MiB browser parts unless comparable measurements justify change. Retain isolated offline bounded synthetic execution; production dependency builds may fetch pinned public dependencies without runtime secrets.
+- Live authorization handoff must stop its original sole owner and hold its data lock before copying authorization; stop all clones before original resumes. Never overwrite original DB/key/session or delete preexisting remote messages. Report compile resource failures separately from executed race tests; live cross-DC remains NOT TESTED without real evidence.
+
 ### Bounded transfer pipeline ownership override
 
 - Current task: faster upload/download/preview only. Work in sanitized export; preserve original repository, deployment and runtime state. No release, push or deployment. Synthetic fixtures only; existing isolated execution rules remain.
