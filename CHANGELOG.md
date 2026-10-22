@@ -11,6 +11,7 @@
 - Fix PDF fetch-reader cancellation rejections, including cancellation before response headers; retain consumer rejection and pin/guard the narrowly scoped dependency patch.
 - Keep mobile navigation and its scrim above the transfer panel, with both-engine pointer/focus/theme/accessibility regressions.
 - Add two independent 30-minute transfer/resource soaks, a separate 30-minute browser media interval, and exact-image live upgrade/recovery/fresh-volume rollback qualification. Both architectures build and run; repeated local OCI exports are byte-identical. [Milestone C readiness](docs/V1.3_RELEASE_FINAL_GATE.md) passes within documented private-use limits; publication and deployment remain separately approved actions.
+- Recommend 1 GiB initial container memory with the existing 512 MiB Go soft limit; 768 MiB passed bounded tests but has no proven headroom. Retain worker limits, existing disk-budget caveats and independent content backups. [Release notes and upgrade guidance](docs/RELEASE_1.3.0.md); [three publication approval gates](docs/V1.3_PUBLICATION_PLAN.md). This documentation update changes no runtime/configuration or published image default.
 
 ## 1.2.1 — 2026-10-22
 

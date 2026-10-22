@@ -4,6 +4,17 @@ Scope: single owner on a trusted local host. Current release checks and image id
 
 Development transfer qualification is recorded separately in [Milestone A](TRANSFER_ENGINE_FINAL_REPORT.md), [Milestone B](MILESTONE_B_FINAL_REPORT.md) and the [v1.3 final gate](V1.3_RELEASE_FINAL_GATE.md). No v1.3 release/tag/publication is implied. Active staging reservations exclude crash leftovers, and older binaries cannot reconcile pending background queues. Finish or cancel them before downgrading.
 
+Start v1.3.0 deployments with a **1 GiB container memory limit**, keeping the
+512 MiB Go soft limit and existing concurrency. Shipped Compose files remain at
+768 MiB; configure the recommendation explicitly in the deployment copy. 768 MiB
+passed bounded tests without proven headroom, and both tested budgets reached
+their cgroup ceilings through file cache. 1 GiB guarantees neither spare capacity
+nor suitability for every workload. Budget separately for roughly 400 MiB active
+staging, 256 MiB cache, SQLite/WAL, retained recovery artifacts, backups and fresh
+restore space; local storage also needs its encrypted library. No total disk
+minimum or hard quota is qualified. Monitor volume and backing-host free space.
+See [release notes](RELEASE_1.3.0.md) and [operations](PRODUCTION_OPERATIONS.md).
+
 ## Storage and recovery
 
 | Boundary | Current behavior and operator action |

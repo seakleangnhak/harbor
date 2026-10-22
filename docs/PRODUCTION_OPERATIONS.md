@@ -47,8 +47,30 @@ cgroup ceilings through file cache. The 1 GiB run observed fewer reclaim stalls,
 without demonstrating spare capacity or a general speed gain. Keep existing
 worker/concurrency limits. Monitor RSS/live heap separately from cgroup anonymous
 memory, file cache, memory events and PSI; see [resource measurements](V1.3_RESOURCE_REPORT.md).
-An explicitly configured 1 GiB hard limit with the same Go limit is a tested
-optional operating point, not a changed default or guaranteed minimum.
+For v1.3.0, **1 GiB is the recommended initial container memory limit**, keeping
+the same 512 MiB Go soft limit, two CPUs and existing worker/queue limits. Set
+`services.drive.mem_limit: 1g` in your deployment copy, or use Dokploy's container
+memory setting for an Application. The shipped Compose files remain at 768 MiB
+to preserve qualified configuration. 768 MiB passed bounded tests without proven
+headroom; 1 GiB also reached its cgroup ceiling and is neither guaranteed spare
+capacity nor a proven minimum. Continue monitoring memory pressure.
+
+An explicit local Compose override can retain that recommendation across
+recreation without editing the distributed template. Create a deployment-only
+file outside the source checkout:
+
+```yaml
+# /secure/harbor/memory.yaml
+services:
+  drive:
+    mem_limit: 1g
+```
+
+Include it on every Compose operation, preserving the existing project name:
+`docker compose -p EXISTING_PROJECT -f compose.yaml -f /secure/harbor/memory.yaml ...`.
+For a fresh Dokploy Compose installation, set the same field in its managed
+configuration. Applying either setting to an existing deployment belongs to the
+separate deployment approval; this documentation does not change a running limit.
 
 Persistent storage has no application-wide quota. Budget for roughly 400 MiB
 of fresh pending chunks, up to 256 MiB cache reservations, SQLite/WAL, backups
@@ -210,6 +232,8 @@ default remains v1.2.1. For a local Compose build, explicitly set
 `HARBOR_IMAGE=harbor:1.3.0-local` so the prepared source uses a separate local
 image name; do not run it against owner data before approval and verified offline backup.
 No tag, registry publication or deployment upgrade is performed by qualification.
+[Release notes](RELEASE_1.3.0.md) and the [publication plan](V1.3_PUBLICATION_PLAN.md)
+separate source push, image publication and Dokploy upgrade approvals.
 
 The 768 MiB runtime fixture completes under page-cache reclaim; it does not
 establish spare memory or justify more workers, queue slots or preview concurrency.

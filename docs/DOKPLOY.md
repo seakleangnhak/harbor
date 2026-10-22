@@ -6,6 +6,16 @@ Use the [v1.2.1 release report](RELEASE_1.2.1.md) for actual registry checks and
 
 Harbor is qualified for local personal use, without an independent security audit or public-internet security qualification. Prefer VPN or restricted access even with HTTPS.
 
+For the prepared v1.3.0 upgrade, start with a **1 GiB container memory limit**,
+keeping the 512 MiB Go soft limit, two CPUs and one instance. Set `mem_limit: 1g`
+in the managed Compose configuration, or use Application resource settings.
+The distributed templates still use 768 MiB, which passed bounded qualification
+without proven headroom. 1 GiB is an initial recommendation, not guaranteed spare
+capacity. [Sizing](PRODUCTION_OPERATIONS.md#protected-installation) and the
+[v1.3 publication plan](V1.3_PUBLICATION_PLAN.md) describe the separate approval
+needed before changing an existing deployment. No v1.3 registry image is claimed
+published here.
+
 ## 1. Choose new installation or upgrade
 
 For a **new drive**, use a new, empty persistent volume. The default external volume is named `harbor-data`; it survives changes in Dokploy/SSH Compose project names. On the selected deployment server, inspect it first:

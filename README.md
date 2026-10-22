@@ -72,7 +72,9 @@ Use a fresh checkout and a trusted local machine. Start Harbor, then create your
 
 ### Docker Compose
 
-Requires Docker with Compose v2. Published images support AMD64 and ARM64; no Go or Node installation is needed. Compose limits the running service to 2 CPUs and 768 MiB. Run from the repository root:
+Requires Docker with Compose v2. Published images support AMD64 and ARM64; no Go or Node installation is needed. For v1.3.0, start with a **1 GiB container memory limit**, the existing **512 MiB Go soft limit**, and 2 CPUs. The shipped Compose limit remains 768 MiB; set `services.drive.mem_limit` to `1g` in your local deployment copy before starting. 768 MiB passed bounded tests but has no proven headroom; 1 GiB is an initial recommendation, not guaranteed spare capacity. [Memory and disk sizing](docs/PRODUCTION_OPERATIONS.md#protected-installation).
+
+The commands below still pull published v1.2.1. v1.3.0 is locally qualified and awaits separate source/image publication approvals; see [release notes](docs/RELEASE_1.3.0.md) and [publication plan](docs/V1.3_PUBLICATION_PLAN.md). Run from the repository root:
 
 ```sh
 export DRIVE_SETUP_TOKEN="$(openssl rand -hex 32)"
@@ -212,7 +214,7 @@ bin/harbor-recovery verify --archive backups/harbor-recovery.harbor
 
 Enter a high-entropy backup password in the hidden Terminal prompt. Automation uses a separate private `--password-file`, never a password argument or environment variable. For browser-onboarded drives, omit `--config-file`: recovery detects the private `<data>/setup` bundle and its owner/session files. Legacy configuration requires an explicit config file describing the actual runtime adapter/channel. Docker backup requires access to the stopped project's private volume; follow the runbook rather than using the native `./data` example.
 
-**A Telegram recovery archive does not mirror remote ciphertext.** Lost account/channel/messages require an independent protected content copy. Key loss without a usable archive, or loss of the archive password, has no recovery bypass.
+**A Telegram recovery archive does not mirror remote ciphertext.** Telegram is an external storage dependency, with no guaranteed independent content durability. Lost account/channel/messages require an independent protected content copy. Key loss without a usable archive, or loss of the archive password, has no recovery bypass.
 
 Follow the [recovery quickstart](docs/RECOVERY_QUICKSTART.md) for off-host copies, fresh-directory restoration, clean-environment startup and download/checksum drills. The [operations runbook](docs/PRODUCTION_OPERATIONS.md) covers scheduled offline backups, session incidents, upgrades and rollback. Never run restored Telegram authorization alongside its original.
 

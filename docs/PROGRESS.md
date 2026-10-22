@@ -1,5 +1,16 @@
 # Progress
 
+## v1.3.0 publication preparation — local only
+
+Qualified `b10764e` implementation preserved. Documentation-only release notes,
+explicit 1 GiB initial-memory recommendation and the
+[publication plan](V1.3_PUBLICATION_PLAN.md) separate source, image and deployment
+approvals. Local main integration uses fast-forward only and retains all reviewed
+commits. Fresh checks and the exact proposed commit are recorded in ignored
+`output/v1.3-publication/` receipts and owner approval request. Hosted CI for the
+new candidate has not run. Existing tags, runtime/configuration and deployment
+remain unchanged; no push, tag, registry publication or visibility change.
+
 ## Milestone C — local v1.3.0 release readiness PASS
 
 Two independent 30-minute mixed-transfer intervals pass at 768/1024 MiB, with
